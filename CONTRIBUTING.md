@@ -53,6 +53,17 @@ which downloads the configured branch's zip from GitHub. It only fires when
 2. To deploy staging: bump `version.txt`, push, click **update** on the staging instance.
 3. To promote: `git checkout production && git merge staging && git push`, then bump/update prod.
 
+Before promoting, run the **promotion gate** to prove `staging` is production-ready:
+
+```bash
+scripts/promotion-gate.sh
+```
+
+It runs both suites, PHP lint, gitleaks, a boot check, and verifies `code/admin/version.txt` is
+bumped above `production` and that the merge is a clean fast-forward — printing **GO** / **NO-GO**.
+The same checks run in CI (`.github/workflows/ci.yml`): every push to `staging`/`production` runs the
+suites and secret scan, and a pull request into `production` also enforces the version bump.
+
 ## Code style
 
 Run the project's PHP CodeSniffer config before submitting:
