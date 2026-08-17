@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [staging, production]
+  pull_request:
+    branches: [production]
+
+jobs:
+  test:
+    name: Test suites (PHP 8.4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: sqlite3, mbstring
+          tools: composer
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Download geobases
+        run: |
+          curl -fsSL https://github.com/sapics/ip-location-db/releases/download/latest/geolite2-country.mmdb -o code/bases/country.mmdb
+          curl -fsSL https://github.com/sapics/ip-location-db/releases/download/latest/origin-asn.mmdb -o code/bases/asn.mmdb
+      - name: Create local DB (avoid UniquenessTest flake)
+        run: php -r 'require "code/db/db.php"; new Db();'
+      - name: Engine suite
+        run: ./vendor/bin/phpunit
+      - name: Application suite
+        run: ./vendor/bin/phpunit tests/application
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  promotion:
+    name: Promotion gate (version bumped)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: version.txt must be bumped above the target branch
+        run: |
+          key() { echo "$1" | awk -F. '{ b=($4==""?0:$4); printf "%04d%02d%02d%03d\n", 2000+$3, $2, $1, b }'; }
+          head_ver="$(tr -d '[:space:]' < code/admin/version.txt)"
+          base_ver="$(git show "origin/${{ github.base_ref }}:code/admin/version.txt" | tr -d '[:space:]')"
+          echo "head=$head_ver base=$base_ver"
+          if [ "$(key "$head_ver")" -gt "$(key "$base_ver")" ]; then
+            echo "OK: $head_ver > $base_ver — deploy will trigger after merge."
+          else
+            echo "::error::code/admin/version.txt ($head_ver) must be greater than ${{ github.base_ref }} ($base_ver) before promoting."
+            exit 1
+          fi
