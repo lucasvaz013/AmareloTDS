@@ -1,0 +1,122 @@
+{
+  "statistics": {
+    "timezone": "Europe/Moscow",
+    "table": [
+      {
+        "field": "clicks",
+        "width": 81
+      },
+      {
+        "field": "uniques",
+        "width": 90
+      },
+      {
+        "field": "cra",
+        "width": -1
+      },
+      {
+        "field": "epc",
+        "width": -1
+      },
+      {
+        "field": "uniques_ratio",
+        "width": 71
+      },
+      {
+        "field": "conversion",
+        "width": -1
+      },
+      {
+        "field": "purchase",
+        "width": -1
+      },
+      {
+        "field": "hold",
+        "width": -1
+      },
+      {
+        "field": "reject",
+        "width": -1
+      },
+      {
+        "field": "trash",
+        "width": -1
+      },
+      {
+        "field": "cpc",
+        "width": 76
+      },
+      {
+        "field": "revenue",
+        "width": -1
+      },
+      {
+        "field": "costs",
+        "width": -1
+      },
+      {
+        "field": "profit",
+        "width": -1
+      },
+      {
+        "field": "roi",
+        "width": -1
+      }
+    ],
+    "trafficBack":[
+      {
+        "field": "time",
+        "width": -1
+      },
+      {
+        "field": "ip",
+        "width": -1
+      },
+      {
+        "field": "country",
+        "width": -1
+      },
+      {
+        "field": "lang",
+        "width": -1
+      },
+      {
+        "field": "os",
+        "width": -1
+      },
+      {
+        "field": "osver",
+        "width": -1
+      },
+      {
+        "field": "brand",
+        "width": -1
+      },
+      {
+        "field": "model",
+        "width": -1
+      },
+      {
+        "field": "isp",
+        "width": -1
+      },
+      {
+        "field": "client",
+        "width": -1
+      },
+      {
+        "field": "clientver",
+        "width": -1
+      },
+      {
+        "field": "ua",
+        "width": -1
+      },
+      {
+        "field": "params",
+        "width": -1
+      }
+    ]
+  },
+  "trafficBackUrl": "https://google.com"
+}

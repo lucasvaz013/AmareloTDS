@@ -1,0 +1,11 @@
+title = "AmareloTDS gitleaks config"
+
+# Use the built-in rules and add project allowlists on top.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Third-party vendored libraries carry their own example/demo keys; they are not this project's secrets."
+paths = [
+  '''(^|/)vendor/''',
+]

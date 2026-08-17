@@ -1,0 +1,142 @@
+.integrations-content {
+    max-width: 900px;
+}
+
+.integrations-intro h1 {
+    margin: 0 0 8px;
+    font-size: 1.6rem;
+}
+
+.integrations-intro p {
+    margin: 0 0 6px;
+    opacity: 0.85;
+}
+
+.integrations-egress code {
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.integrations-alert {
+    margin: 14px 0;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.integrations-alert.is-error {
+    border-color: rgba(220, 53, 69, 0.55);
+    background: rgba(220, 53, 69, 0.12);
+}
+
+.integration-card {
+    margin: 18px 0;
+    padding: 18px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.integration-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.integration-card-head h2 {
+    margin: 0 0 4px;
+    font-size: 1.15rem;
+}
+
+.integration-card-head p {
+    margin: 0;
+    opacity: 0.75;
+    font-size: 0.9rem;
+}
+
+.integration-state {
+    flex: 0 0 auto;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.integration-state.is-ok {
+    border-color: rgba(25, 135, 84, 0.6);
+    background: rgba(25, 135, 84, 0.18);
+}
+
+.integration-state.is-error {
+    border-color: rgba(220, 53, 69, 0.6);
+    background: rgba(220, 53, 69, 0.18);
+}
+
+.integration-field {
+    margin-bottom: 12px;
+}
+
+/* The panel body colour is Bootstrap's dark text, which the global rules override for
+   headings and paragraphs but not for labels — without this they render nearly black on
+   a nearly black card. */
+.integration-field label,
+.integration-field-inline label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+    color: #fff;
+}
+
+.integration-field input[type="text"],
+.integration-field input[type="password"] {
+    width: 100%;
+    padding: 7px 10px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.25);
+    color: inherit;
+}
+
+.integration-field-inline label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.integrations-content,
+.integration-card,
+.integrations-alert,
+.integration-state {
+    color: #fff;
+}
+
+.integration-hint {
+    margin: 6px 0 0;
+    font-size: 0.85rem;
+    opacity: 0.72;
+}
+
+.integration-result {
+    margin: 12px 0 0;
+    min-height: 1.2em;
+    font-size: 0.9rem;
+}
+
+.integration-result.is-error {
+    color: #ff8f9a;
+}
+
+.integrations-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin: 22px 0 40px;
+}

@@ -1,0 +1,46 @@
+<!-- Columns Selection Modal -->
+<link rel="stylesheet" href="css/modal-common.css">
+<link rel="stylesheet" href="css/sortable-common.css">
+
+<div id="columnModal" class="ywbmodal ywbmodal-narrow">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h5>Select and Order Columns</h5>
+        </div>
+        <div class="modal-body">
+            <div class="columns-flex-container">
+                <div class="columns-section">
+                    <h5 style="display:flex;align-items:center;gap:6px;white-space:nowrap;">Columns
+                        <span id="selectAllColumns" class="header-checkbox-btn" title="Select All"><input type="checkbox" checked readonly></span>
+                        <span id="deselectAllColumns" class="header-checkbox-btn" title="Deselect All"><input type="checkbox" readonly></span>
+                        <button id="addParamColumn" class="btn btn-sm btn-outline-primary" style="margin-left: 4px;">+ URL Param</button>
+                    </h5>
+                    <div id="columnsContainer" class="columns-container">
+                        <div id="columnsList" class="sortable-list"></div>
+                    </div>
+                </div>
+
+                <div class="filters-section">
+                    <h5>Filters <button id="addFilterRow" class="btn btn-sm btn-outline-primary" style="margin-left: 8px;">+ Add</button></h5>
+                    <div style="margin-bottom: 6px;">
+                        <label style="margin-right: 8px;">Condition:</label>
+                        <select id="filterCondition" class="form-control" style="width: 80px; display: inline-block;">
+                            <option value="AND">AND</option>
+                            <option value="OR">OR</option>
+                        </select>
+                    </div>
+                    <div class="columns-container">
+                        <div id="filterRows"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" id="closeModal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="saveColumns">Save</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/sortable-common.js"></script>
+<script src="js/clmnspopup.js"></script>

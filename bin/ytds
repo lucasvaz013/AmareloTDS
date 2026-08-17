@@ -1,0 +1,18 @@
+#!/usr/bin/env php
+<?php
+
+// ytds — operate a local AmareloTDS from the command line. JSON out, stable contract.
+// Lives outside code/ on purpose: never shipped by the auto-updater, never web-reachable.
+
+if (PHP_SAPI !== 'cli') {
+    exit(1);
+}
+
+// Machine contract: stdout/stderr carry only our JSON. Drop PHP's own error output so a stray
+// notice can never corrupt it; real failures surface as structured errors via ytds_run().
+error_reporting(E_ALL & ~E_DEPRECATED);
+ini_set('display_errors', '0');
+
+require_once __DIR__ . '/../cli/main.php';
+
+exit(ytds_run($argv));

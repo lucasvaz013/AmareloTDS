@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JS connection test</title>
+  </head>
+  <body>
+    <h1>THIS IS JUST SOME RANDOM BS </h1>
+ <script>
+    let jsApiUrl = "js/index.php";
+    const params = new URLSearchParams();
+    const curParams = new URLSearchParams(window.location.search);
+    if (curParams.size>0)
+      params.append('tds_qs', btoa(decodeURIComponent(window.location.search.replace("?", ""))));
+    params.append('tds_ref', document.referrer);
+    jsApiUrl += `?${params.toString()}`;
+
+    const script = document.createElement("script");
+    script.type = "application/javascript";
+    script.src = jsApiUrl;
+
+    const firstScript = document.getElementsByTagName("script")[0];
+    firstScript.parentNode.insertBefore(script, firstScript);
+ </script> 
+  </body>
+</html>

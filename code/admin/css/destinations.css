@@ -1,0 +1,117 @@
+.destinations-content {
+    max-width: 1000px;
+    color: #fff;
+}
+
+.destinations-intro h1 {
+    margin: 0 0 8px;
+    font-size: 1.6rem;
+}
+
+.destinations-intro p {
+    margin: 0 0 6px;
+    opacity: 0.85;
+}
+
+.destinations-hint {
+    font-size: 0.88rem;
+    opacity: 0.72;
+}
+
+.destinations-hint code,
+.destinations-intro code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cfe0ff;
+}
+
+.destinations-hint a {
+    color: #8fb8ff;
+}
+
+.destinations-alert {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.destinations-alert.is-error {
+    border-color: rgba(220, 53, 69, 0.55);
+    background: rgba(220, 53, 69, 0.12);
+}
+
+.destinations-table-head {
+    display: grid;
+    grid-template-columns: 1.2fr 1.6fr 1fr auto;
+    gap: 10px;
+    margin: 16px 0 8px;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
+}
+
+.destinations-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.destination-row {
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.destination-fields {
+    display: grid;
+    grid-template-columns: 1.2fr 1.6fr 1fr auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.destination-row .form-control {
+    padding: 7px 10px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.25);
+    color: #fff;
+}
+
+.destination-preview {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 0.84rem;
+    overflow-x: auto;
+}
+
+.destination-preview-label {
+    flex: 0 0 auto;
+    opacity: 0.6;
+}
+
+.destination-preview-url {
+    color: #8fe0a0;
+    white-space: nowrap;
+}
+
+.destination-preview.is-dangling .destination-preview-label,
+.destination-preview.is-dangling .destination-preview-url {
+    color: #f5b567;
+}
+
+.destinations-actions {
+    display: flex;
+    gap: 8px;
+    margin: 18px 0 40px;
+}
+
+.destinations-actions #destinationsSave {
+    margin-left: auto;
+}

@@ -1,0 +1,16 @@
+AmareloTDS
+==========
+
+AmareloTDS is a derivative work based on YellowTDS by Yehor Dvygolov (GitHub: dvygolov).
+Upstream project: https://github.com/dvygolov/YellowTDS
+
+The traffic-distribution engine (per-request white/black/trafficback routing, the SQLite
+data model, the admin panel, filtering, A/B testing, HTML processing, and macros) originates
+from the upstream author's work. This project builds on that base — notably the `ytds`
+command-line client, the admin JSON API, and extensions to campaign/library operations — and
+rebrands the product as AmareloTDS.
+
+The upstream project is published without an explicit software license. This NOTICE exists to
+acknowledge its authorship. The LICENSE file in this repository covers only the original
+contributions authored by the AmareloTDS project (see LICENSE for the exact scope). Nothing in
+this repository asserts ownership over the upstream author's code.

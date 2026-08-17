@@ -1,0 +1,85 @@
+.networks-content {
+    max-width: 900px;
+    color: #fff;
+}
+
+.networks-intro h1 {
+    margin: 0 0 8px;
+    font-size: 1.6rem;
+}
+
+.networks-intro p {
+    margin: 0 0 6px;
+    opacity: 0.85;
+}
+
+.networks-hint {
+    font-size: 0.88rem;
+    opacity: 0.72;
+}
+
+.networks-hint code,
+.networks-intro code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #cfe0ff;
+}
+
+.networks-alert {
+    margin: 12px 0;
+    padding: 10px 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.networks-alert.is-error {
+    border-color: rgba(220, 53, 69, 0.55);
+    background: rgba(220, 53, 69, 0.12);
+}
+
+.networks-table-head,
+.network-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr auto;
+    gap: 10px;
+    align-items: center;
+}
+
+.networks-table-head {
+    margin: 16px 0 8px;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
+}
+
+.networks-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.network-row .form-control {
+    padding: 7px 10px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.25);
+    color: #fff;
+}
+
+.network-row .network-params {
+    font-family: monospace;
+    font-size: 0.86rem;
+}
+
+.networks-actions {
+    display: flex;
+    gap: 8px;
+    margin: 18px 0 40px;
+}
+
+.networks-actions #networksSave {
+    margin-left: auto;
+}
