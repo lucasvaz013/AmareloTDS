@@ -51,9 +51,10 @@ final class AdminOpsTest extends TestCase
 
     private function seedTwoClicks(): void
     {
+        // Distinct times so ORDER BY time DESC is deterministic (c1 is the newest) across SQLite builds.
         $this->db->seedClicks([
             ['clickid' => 'c1', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'country' => 'US', 'device' => 'desktop', 'status' => 'Purchase', 'payout' => 10.0, 'flow' => 'Flow 1', 'path' => ['lp'], 'step' => 0],
-            ['clickid' => 'c2', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'country' => 'BR', 'device' => 'mobile', 'flow' => 'Flow 1', 'path' => ['lp'], 'step' => 0],
+            ['clickid' => 'c2', 'campaign_id' => 1, 'time' => self::SEED_TIME - 3600, 'country' => 'BR', 'device' => 'mobile', 'flow' => 'Flow 1', 'path' => ['lp'], 'step' => 0],
         ]);
     }
 
