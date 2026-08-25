@@ -103,6 +103,40 @@ $registrantFields = [
     <section class="domain-card">
         <header class="domain-card-head">
             <div>
+                <h2><i class="bi bi-arrow-left-right" aria-hidden="true"></i> Postback Gateway</h2>
+                <p>
+                    Publishes a root domain that serves only <code>/api/postback.php</code> for platforms
+                    that reject subdomains. Campaign routing, admin and every other path return 404.
+                </p>
+            </div>
+            <span class="domain-state" id="postbackGatewayState">checking…</span>
+        </header>
+
+        <div class="domain-row">
+            <input type="text" id="postbackGatewayDomain" class="domain-input" spellcheck="false" autocomplete="off"
+                   placeholder="yourdomain.com">
+            <span id="postbackGatewayWrap" class="domain-button-wrap">
+                <button type="button" id="postbackGatewayBtn" class="btn btn-primary" disabled>Create gateway</button>
+            </span>
+        </div>
+        <p class="domain-warning">
+            <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+            This replaces the apex A record, removes conflicting AAAA/CNAME address records and can take an existing website offline.
+            MX and TXT records are preserved. Confirm only when this root domain is dedicated to postbacks.
+        </p>
+        <p class="domain-result" id="postbackGatewayResult"></p>
+        <ol class="domain-steps" id="postbackGatewaySteps" hidden></ol>
+
+        <div id="postbackGatewaysEmpty" class="domains-empty">No postback gateways yet.</div>
+        <table class="domains-table" id="postbackGatewaysTable" hidden>
+            <thead><tr><th>Endpoint</th><th>Status</th><th></th></tr></thead>
+            <tbody id="postbackGatewaysTableBody"></tbody>
+        </table>
+    </section>
+
+    <section class="domain-card">
+        <header class="domain-card-head">
+            <div>
                 <h2><i class="bi bi-pencil-square" aria-hidden="true"></i> Import manually</h2>
                 <p>For a domain whose DNS lives somewhere else.</p>
             </div>

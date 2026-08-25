@@ -63,6 +63,10 @@ final class SettingsManager
             ],
             /** @var list<array{name:string,source:string,zone_id:string,added:int}> */
             'managedDomains' => [],
+            'postbackGateway' => [
+                'version' => 1,
+                'domains' => [],
+            ],
             'plugins' => [
                 'currency' => [
                     'items' => [],

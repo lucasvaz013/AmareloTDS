@@ -145,7 +145,23 @@
             );
         }
 
+        const gatewayButton = el('postbackGatewayBtn');
+        gatewayButton.disabled = !cfReady;
+        el('postbackGatewayState').textContent = cfReady ? 'ready' : 'needs Cloudflare';
+        el('postbackGatewayState').className = 'domain-state ' + (cfReady ? 'is-ok' : 'is-error');
+        const gatewayWrap = el('postbackGatewayWrap');
+        gatewayWrap.classList.toggle('settings-help-icon', !cfReady);
+        gatewayWrap.classList.toggle('is-blocked', !cfReady);
+        if (cfReady) {
+            gatewayWrap.removeAttribute('data-tooltip');
+            gatewayWrap.removeAttribute('tabindex');
+        } else {
+            gatewayWrap.setAttribute('tabindex', '0');
+            gatewayWrap.setAttribute('data-tooltip', 'Connect Cloudflare first. Gateway creation updates the root A record.');
+        }
+
         renderDomains(state.domains || []);
+        renderPostbackGateways(state.postback_gateways || []);
     }
 
     const ORIGINS = { registered: 'bought here', cloudflare: 'Cloudflare sync', manual: 'manual' };
@@ -219,6 +235,45 @@
         });
 
         schedulePendingSweep(list);
+    }
+
+    function renderPostbackGateways(list) {
+        const body = el('postbackGatewaysTableBody');
+        body.innerHTML = '';
+        el('postbackGatewaysEmpty').hidden = list.length > 0;
+        el('postbackGatewaysTable').hidden = list.length === 0;
+
+        list.forEach((entry) => {
+            const tr = document.createElement('tr');
+            const endpoint = document.createElement('td');
+            const code = document.createElement('code');
+            code.textContent = entry.url || ('https://' + entry.name + '/api/postback.php');
+            endpoint.appendChild(code);
+            tr.appendChild(endpoint);
+            tr.appendChild(statusCell(entry));
+
+            const actions = document.createElement('td');
+            actions.className = 'domains-actions';
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'btn btn-outline-secondary btn-sm';
+            retry.textContent = 'Check now';
+            retry.addEventListener('click', () => run({ action: 'gateway-resume', domain: entry.name }));
+            actions.appendChild(retry);
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-outline-danger btn-sm';
+            remove.textContent = 'Remove';
+            remove.addEventListener('click', () => {
+                if (window.confirm('Stop reconciling ' + entry.name + '? DNS and nginx will stay in place.')) {
+                    run({ action: 'gateway-remove', domain: entry.name });
+                }
+            });
+            actions.appendChild(remove);
+            tr.appendChild(actions);
+            body.appendChild(tr);
+        });
     }
 
     // Cloudflare activates a zone minutes to hours after the nameservers change, so the
@@ -297,6 +352,21 @@
             const outcome = payload.outcome || {};
             setResult('syncResult', outcome.message, !outcome.ok);
             renderSteps('syncSteps', outcome.steps);
+        });
+    });
+
+    el('postbackGatewayBtn').addEventListener('click', () => {
+        const domain = el('postbackGatewayDomain').value.trim();
+        if (!window.confirm(
+            'Create a postback-only gateway on ' + domain + '?\n\n'
+            + 'This replaces apex address records and can take an existing website offline.'
+        )) {
+            return;
+        }
+        run({ action: 'gateway-sync', domain: domain, confirm: true }, (payload) => {
+            const outcome = payload.outcome || {};
+            setResult('postbackGatewayResult', outcome.message, outcome.status === 'error');
+            renderSteps('postbackGatewaySteps', outcome.steps);
         });
     });
 

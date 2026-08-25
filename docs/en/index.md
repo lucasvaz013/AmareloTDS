@@ -26,6 +26,7 @@ This is the main product, admin, and runtime documentation for AmareloTDS.
 - [Scripts](scripts.md)
 - [Events](events.md)
 - [Postbacks](postbacks.md)
+- [Postback Gateway](postback-gateway.md)
 
 ## Reporting
 

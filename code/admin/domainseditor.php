@@ -5,6 +5,7 @@ ini_set('display_errors', '0');
 
 require_once __DIR__ . '/../settings.php';
 require_once __DIR__ . '/../domains.php';
+require_once __DIR__ . '/../postbackgateway.php';
 require_once __DIR__ . '/../db/db.php';
 require_once __DIR__ . '/../logging.php';
 require_once __DIR__ . '/password.php';
@@ -129,6 +130,7 @@ function domains_state(SettingsManager $manager, array $settings, string $public
         'registrant' => $profile,
         'can_register' => $cloudflare->ok && $namecheapConfigured && $registrantSource !== 'none',
         'domains' => DomainRegistry::all($settings),
+        'postback_gateways' => PostbackGatewayRegistry::all($settings),
         'campaigns' => domains_campaign_options(new Db()),
     ];
 }
@@ -136,6 +138,12 @@ function domains_state(SettingsManager $manager, array $settings, string $public
 function domains_persist(SettingsManager $manager, array $settings, array $list, int $revision): array
 {
     $settings['managedDomains'] = $list;
+    return $manager->save($settings, $revision);
+}
+
+function postback_gateway_persist(SettingsManager $manager, array $settings, array $list, int $revision): array
+{
+    $settings['postbackGateway'] = PostbackGatewayRegistry::settings($list);
     return $manager->save($settings, $revision);
 }
 
@@ -179,7 +187,7 @@ function domains_handle_request(): void
     $domain = DomainName::normalize((string)($input['domain'] ?? ''));
     $revision = (int)($input['revision'] ?? $manager->revision());
 
-    if (in_array($action, ['check-availability', 'register', 'cloudflare-sync', 'manual-check', 'remove', 'resume', 'assign'], true)
+    if (in_array($action, ['check-availability', 'register', 'cloudflare-sync', 'manual-check', 'remove', 'resume', 'assign', 'gateway-sync', 'gateway-resume', 'gateway-remove'], true)
         && !DomainName::isValid($domain)) {
         domains_send(['error' => 'Type a domain like lifeisgoodhere.online.'], 422);
         return;
@@ -290,6 +298,62 @@ function domains_handle_request(): void
                     $settings = $saved['settings'];
                 }
                 domains_send(['outcome' => $outcome->jsonSerialize()] + domains_state($manager, $settings, $publicIp));
+                return;
+
+            case 'gateway-sync':
+                if (($input['confirm'] ?? false) !== true) {
+                    domains_send(['error' => 'Gateway DNS replacement must be confirmed.'], 422);
+                    return;
+                }
+                $publicIp = integrations_detect_public_ipv4();
+                $outcome = postback_gateway_sync_cloudflare($settings, $domain, $publicIp, dirname(__DIR__));
+                $saved = postback_gateway_persist(
+                    $manager,
+                    $settings,
+                    PostbackGatewayRegistry::put(
+                        PostbackGatewayRegistry::all($settings),
+                        $domain,
+                        'cloudflare',
+                        $outcome->zoneId,
+                        time(),
+                        $outcome->status,
+                        $outcome->message
+                    ),
+                    $revision
+                );
+                domains_send(['outcome' => $outcome->jsonSerialize()] + domains_state($manager, $saved['settings'], $publicIp));
+                return;
+
+            case 'gateway-resume':
+                $publicIp = integrations_detect_public_ipv4();
+                $outcome = postback_gateway_sync_cloudflare($settings, $domain, $publicIp, dirname(__DIR__));
+                $saved = postback_gateway_persist(
+                    $manager,
+                    $settings,
+                    PostbackGatewayRegistry::put(
+                        PostbackGatewayRegistry::all($settings),
+                        $domain,
+                        'cloudflare',
+                        $outcome->zoneId,
+                        time(),
+                        $outcome->status,
+                        $outcome->message
+                    ),
+                    $revision
+                );
+                domains_send(['outcome' => $outcome->jsonSerialize()] + domains_state($manager, $saved['settings'], $publicIp));
+                return;
+
+            case 'gateway-remove':
+                $saved = postback_gateway_persist(
+                    $manager,
+                    $settings,
+                    PostbackGatewayRegistry::remove(PostbackGatewayRegistry::all($settings), $domain),
+                    $revision
+                );
+                domains_send(domains_state($manager, $saved['settings'], integrations_detect_public_ipv4()) + [
+                    'message' => $domain . ' removed from gateway reconciliation. DNS and nginx were left untouched.',
+                ]);
                 return;
 
             case 'assign':

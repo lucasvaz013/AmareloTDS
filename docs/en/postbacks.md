@@ -15,6 +15,8 @@ Deleting a custom status shows its current and historical uses before confirmati
 
 ## Incoming Postback
 
+If a partner rejects subdomains in callback URLs, publish a locked root-domain endpoint with [Postback Gateway](postback-gateway.md) instead of adding another campaign domain.
+
 Send a request to `api/postback.php` with:
 
 - `clickid` — required click identifier;

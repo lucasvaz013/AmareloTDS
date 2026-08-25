@@ -12,6 +12,7 @@
 
 require_once __DIR__ . '/../settings.php';
 require_once __DIR__ . '/../domains.php';
+require_once __DIR__ . '/../postbackgateway.php';
 require_once __DIR__ . '/../logging.php';
 
 if (PHP_SAPI !== 'cli') {
@@ -29,8 +30,9 @@ $pending = array_values(array_filter(
     static fn(array $entry): bool => (string)($entry['status'] ?? '') !== DomainStatus::READY
         && DomainName::isValid((string)($entry['name'] ?? ''))
 ));
+$gatewayList = PostbackGatewayRegistry::all($settings);
 
-if ($pending === []) {
+if ($pending === [] && $gatewayList === []) {
     exit(0);
 }
 
@@ -72,7 +74,39 @@ foreach ($pending as $entry) {
     }
 }
 
-if ($changed === 0) {
+$gatewayChanged = 0;
+foreach ($gatewayList as $entry) {
+    $name = DomainName::normalize((string)($entry['name'] ?? ''));
+    if (!DomainName::isValid($name) || (string)($entry['source'] ?? '') !== 'cloudflare') {
+        continue;
+    }
+    $previous = (string)($entry['status'] ?? '');
+    try {
+        $outcome = postback_gateway_sync_cloudflare($settings, $name, $publicIp, $root);
+    } catch (Throwable $e) {
+        ytds_log('error', 'cron', 'Postback gateway refresh failed: ' . $e->getMessage(), ['domain' => $name]);
+        continue;
+    }
+    $gatewayList = PostbackGatewayRegistry::put(
+        $gatewayList,
+        $name,
+        'cloudflare',
+        $outcome->zoneId,
+        time(),
+        $outcome->status,
+        $outcome->message
+    );
+    $gatewayChanged++;
+    if ($outcome->status !== $previous) {
+        ytds_log('info', 'cron', 'Postback gateway status changed to ' . $outcome->status, [
+            'domain' => $name,
+            'from' => $previous,
+            'message' => $outcome->message,
+        ]);
+    }
+}
+
+if ($changed === 0 && $gatewayChanged === 0) {
     exit(0);
 }
 
@@ -81,8 +115,16 @@ if ($changed === 0) {
 // — an API token, for instance. Re-read and touch only the domain list.
 try {
     $fresh = $manager->load();
-    $fresh['managedDomains'] = $list;
+    if ($changed > 0) {
+        $fresh['managedDomains'] = $list;
+    }
+    if ($gatewayChanged > 0) {
+        $fresh['postbackGateway'] = PostbackGatewayRegistry::settings($gatewayList);
+    }
     $manager->save($fresh, $manager->revision());
 } catch (Throwable $e) {
-    ytds_log('warning', 'cron', 'Domain refresh could not save: ' . $e->getMessage(), ['checked' => $changed]);
+    ytds_log('warning', 'cron', 'Domain refresh could not save: ' . $e->getMessage(), [
+        'domains_checked' => $changed,
+        'gateways_checked' => $gatewayChanged,
+    ]);
 }

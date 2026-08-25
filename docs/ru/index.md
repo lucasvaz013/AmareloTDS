@@ -20,6 +20,7 @@
 - [Scripts](scripts.md)
 - [Events](events.md)
 - [Postbacks](postbacks.md)
+- [Postback Gateway](postback-gateway.md)
 - [Статистика](statistics.md)
 - [Click views](clicks-and-views.md)
 - [API и endpoints](api-and-endpoints.md)

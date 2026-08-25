@@ -286,6 +286,7 @@ Construídas neste fork (vivem em `staging`), com o design em plan docs commitad
 |---|---|---|---|
 | CAPI | Conversões server‑side p/ Meta | `code/capi.php` | `docs/en/meta-capi.md` |
 | Domains | Registra/aponta/provisiona domínios (Namecheap + Cloudflare + nginx) | `code/domains.php`, `code/cron/*_domains.php` | — |
+| Postback Gateway | Expõe somente `/api/postback.php` em domínio raiz, com DNS/nginx reconciliados | `code/postbackgateway.php` | `docs/en/postback-gateway.md` |
 | Integrations | Cofre + teste de saúde das credenciais externas | `code/integrations.php` | — |
 | Landings | Biblioteca de pastas de landing (upload/editar/duplicar/excluir) | `code/landings.php`, `code/admin/landings.php` | — |
 | Destinations `{link:N}` | Destino externo por‑landing no step, gravado como snapshot no render | `code/campaign.php`, `code/htmlprocessing.php` | `docs/en/networks-and-destinations.md` |
@@ -313,7 +314,7 @@ Campo‑a‑campo em `docs/en/`; a campanha é achada pelo domínio.
 - **Landings** — pastas `caching/landings/<pasta>` (upload ZIP/editar/duplicar/excluir); modo `base` (nginx direto) ou `direct` (`/__dl/<clickid>/<step>/`).
 - **Conversions** — status (`Lead`/`Purchase`/`Reject`/`Trash` + custom com aliases); dedup por tid no namespace `(campanha, parâmetro, tid)` → **um** param de tid por postback; **Cap** é filtro de flow (não campo aqui), corte do dia pelo Campaign timezone. Atalhos sem postback: Form submission (`send.php`) e `ytdsConversion(status)`.
 - **Events** — micro‑interações por `clickid+step` (`click_steps.events`); **não** viram conversão/payout/CAPI. Custom: `^[a-z][a-z0-9_]{0,63}$`.
-- **Postback in / S2S out** — entrada `/api/postback.php?clickid=…&status=…&payout=…&tid=…` (key protection opcional); saída CAPI server‑side p/ Meta (`code/capi.php`, só Purchase/Lead mapeáveis, Purchase exige `payout>0`), **máx. 5** postbacks S2S.
+- **Postback in / S2S out** — entrada `/api/postback.php?clickid=…&status=…&payout=…&tid=…` (key protection opcional); parceiro que rejeita subdomínio usa o Postback Gateway isolado (`docs/en/postback-gateway.md`); saída CAPI server‑side p/ Meta (`code/capi.php`, só Purchase/Lead mapeáveis, Purchase exige `payout>0`), **máx. 5** postbacks S2S.
 - **Integration / Connect** — PHP Connect por API key (`/api/phpconnect.php`, UA precisa conter `AmareloTDS` senão 404); JS Connect por domínio (`/js/`, domínio precisa estar em Domains). API key é `readonly`; vazou → duplicar campanha.
 - **Scripts** — Backfix, Next/Form‑Submit Redirect, lazy‑load. **Sem** campo de HTML/JS livre (pixel vai no ZIP da landing).
 - **Misc / Statistics** — Uniqueness counting (não desliga enquanto algum flow usar a regra) + Campaign timezone; relatórios com colunas custom e `group by` por `param.<nome>` (`clicks.params`, sem whitelist); venda por variante na aba Statistics do flow (`click_steps.variant` ⋈ `clicks.status`).

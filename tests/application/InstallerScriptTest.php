@@ -54,6 +54,18 @@ class InstallerScriptTest extends TestCase
         $this->assertStringContainsString('PARSED_DOMAINS+=("$domain")', $this->script);
     }
 
+    public function testInstallerSupportsLockedPostbackGatewayMode(): void
+    {
+        $this->assertStringContainsString('--add-postback-gateway', $this->script);
+        self::assertStringContainsString('write_postback_gateway_nginx_config', $this->script);
+        self::assertStringContainsString('# amarelotds-postback-gateway v1', $this->script);
+        self::assertStringContainsString('[ "$first_line" = "$marker" ]', $this->script);
+        self::assertStringContainsString('location = /api/postback.php', $this->script);
+        $this->assertStringContainsString('location / {', $this->script);
+        $this->assertStringContainsString('return 404;', $this->script);
+        $this->assertStringContainsString('Refusing to overwrite an unmanaged nginx site', $this->script);
+    }
+
     public function testInstallerSupportsCurlPipeRepositoryDownload(): void
     {
         $this->assertStringContainsString('AMARELOTDS_REPO_ZIP', $this->script);
@@ -180,8 +192,13 @@ class InstallerScriptTest extends TestCase
 
     public function testInstallerChecksDnsBeforeCertbot(): void
     {
-        $verifyPos = strpos($this->script, 'verify_domain_points_here "$domain" "$public_ip"');
-        $certbotPos = strpos($this->script, 'certbot --nginx -d "$domain"');
+        $configureStart = strpos($this->script, 'configure_domain()');
+        $configureEnd = strpos($this->script, 'run_full_install()', $configureStart ?: 0);
+        $this->assertNotFalse($configureStart);
+        $this->assertNotFalse($configureEnd);
+        $configureBlock = substr($this->script, $configureStart, $configureEnd - $configureStart);
+        $verifyPos = strpos($configureBlock, 'verify_domain_points_here "$domain" "$public_ip"');
+        $certbotPos = strpos($configureBlock, 'certbot --nginx -d "$domain"');
 
         $this->assertNotFalse($verifyPos);
         $this->assertNotFalse($certbotPos);

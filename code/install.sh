@@ -68,10 +68,11 @@ usage() {
 Usage:
   sudo bash install.sh
   sudo bash install.sh --add-domain
+  sudo bash install.sh --add-postback-gateway
 
 Environment variables:
   AMARELOTDS_DOMAIN       Primary domain for full install
-  AMARELOTDS_DOMAINS      Comma-separated domains for --add-domain
+  AMARELOTDS_DOMAINS      Comma-separated domains for either add mode
   AMARELOTDS_APP_DIR      Installation directory or existing app directory
   AMARELOTDS_ADMIN_PATH   Admin path segment; defaults to a random 8-char hex value
   AMARELOTDS_UPDATE_BRANCH Branch this instance installs and tracks (default: production)
@@ -83,6 +84,8 @@ EOF
 MODE="install"
 if [ "${1:-}" = "--add-domain" ]; then
     MODE="add-domain"
+elif [ "${1:-}" = "--add-postback-gateway" ]; then
+    MODE="add-postback-gateway"
 elif [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
     usage
     exit 0
@@ -376,6 +379,25 @@ verify_domain_points_here() {
     done
 
     fail "Domain $domain is not pointed to this server. Expected $public_ip, resolved: $resolved"
+}
+
+resolve_domain_ipv6() {
+    local domain="$1"
+    getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+}
+
+verify_postback_gateway_dns() {
+    local domain="$1"
+    local public_ip="$2"
+    local ipv4
+    local ipv6
+
+    ipv4="$(resolve_domain_ips "$domain")"
+    ipv6="$(resolve_domain_ipv6 "$domain")"
+    [ "$ipv4" = "$public_ip" ] \
+        || fail "Postback gateway $domain must have exactly one A record pointing to $public_ip"
+    [ -z "$ipv6" ] \
+        || fail "Postback gateway $domain must not have AAAA records"
 }
 
 safe_name() {
@@ -735,6 +757,76 @@ EOF
     ln -sf "$config_file" "/etc/nginx/sites-enabled/${domain}"
 }
 
+write_postback_gateway_nginx_config() {
+    local domain="$1"
+    local app_dir="$2"
+    local config_file="/etc/nginx/sites-available/${domain}"
+    local marker="# amarelotds-postback-gateway v1"
+
+    install -d -m 0755 /etc/nginx/sites-available /etc/nginx/sites-enabled \
+        || fail "Failed to prepare nginx site directories"
+
+    if [ -e "$config_file" ]; then
+        local first_line=""
+        IFS= read -r first_line < "$config_file" || true
+        [ "$first_line" = "$marker" ] \
+            || fail "Refusing to overwrite an unmanaged nginx site: $config_file"
+    fi
+
+    cat > "$config_file" <<EOF
+${marker}
+server {
+    listen 80;
+    server_name ${domain};
+    root ${app_dir};
+
+    access_log /var/log/nginx/${domain}.postback.access.log;
+    error_log /var/log/nginx/${domain}.postback.error.log;
+
+    location ^~ /.well-known/acme-challenge/ {
+        allow all;
+    }
+
+    location = /api/postback.php {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php${PHP_VER}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location / {
+        return 404;
+    }
+}
+EOF
+
+    ln -sfn "$config_file" "/etc/nginx/sites-enabled/${domain}"
+}
+
+configure_postback_gateway() {
+    local domain="$1"
+    local app_dir="$2"
+    local public_ip="$3"
+
+    validate_domain "$domain" || fail "Invalid domain: $domain"
+    [ -d "$app_dir" ] || fail "Application directory does not exist: $app_dir"
+    [ -f "$app_dir/api/postback.php" ] || fail "Postback endpoint not found in: $app_dir"
+
+    verify_postback_gateway_dns "$domain" "$public_ip"
+    write_postback_gateway_nginx_config "$domain" "$app_dir"
+    nginx -t || fail "Nginx configuration test failed for $domain"
+    restart_service nginx || fail "Failed to reload nginx for $domain"
+
+    if [ -n "${SKIP_SSL:-}" ]; then
+        info "Skipping SSL setup for $domain because SKIP_SSL is set"
+    else
+        certbot --nginx -d "$domain" --non-interactive --agree-tos --register-unsafely-without-email --redirect \
+            || fail "Failed to issue HTTPS certificate for $domain"
+    fi
+
+    success "Postback gateway configured: https://${domain}/api/postback.php"
+}
+
 configure_domain() {
     local domain="$1"
     local app_dir="$2"
@@ -832,11 +924,41 @@ run_add_domain() {
     success "All domains configured"
 }
 
+run_add_postback_gateway() {
+    local domains="${AMARELOTDS_DOMAINS:-}"
+    local app_dir="${AMARELOTDS_APP_DIR:-}"
+    local public_ip
+    local domain
+
+    echo -e "${GREEN}${PRODUCT_NAME} add-postback-gateway mode${NC}"
+
+    if [ -z "$app_dir" ]; then
+        read -r -p "Enter existing AmareloTDS app directory: " app_dir < /dev/tty
+    fi
+    app_dir="$(readlink -m "$app_dir")"
+    [ -d "$app_dir" ] || fail "Application directory does not exist: $app_dir"
+
+    if [ -z "$domains" ]; then
+        read -r -p "Enter gateway domains separated by comma: " domains < /dev/tty
+    fi
+
+    parse_domain_list "$domains"
+    public_ip="$(detect_public_ip)"
+    for domain in "${PARSED_DOMAINS[@]}"; do
+        configure_postback_gateway "$domain" "$app_dir" "$public_ip"
+    done
+
+    success "All postback gateways configured"
+}
+
 case "$MODE" in
     install)
         run_full_install
         ;;
     add-domain)
         run_add_domain
+        ;;
+    add-postback-gateway)
+        run_add_postback_gateway
         ;;
 esac

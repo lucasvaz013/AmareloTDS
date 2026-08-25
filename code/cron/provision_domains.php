@@ -16,6 +16,7 @@
 
 require_once __DIR__ . '/../settings.php';
 require_once __DIR__ . '/../domains.php';
+require_once __DIR__ . '/../postbackgateway.php';
 require_once __DIR__ . '/../logging.php';
 
 if (PHP_SAPI !== 'cli') {
@@ -101,4 +102,86 @@ if ($changed) {
     // The panel reads this as www-data.
     @chown(DomainProvisioner::statePath($root), 'www-data');
     @chmod(DomainProvisioner::statePath($root), 0664);
+}
+
+$gatewayState = PostbackGatewayProvisioner::read($root);
+$gatewayChanged = false;
+$gatewayPublicIp = integrations_detect_public_ipv4();
+foreach (PostbackGatewayRegistry::all($settings) as $entry) {
+    $domain = DomainName::normalize((string)($entry['name'] ?? ''));
+    if (!DomainName::isValid($domain) || (string)($entry['source'] ?? '') !== 'cloudflare') {
+        continue;
+    }
+
+    $known = is_array($gatewayState[$domain] ?? null) ? $gatewayState[$domain] : [];
+    $sitePath = '/etc/nginx/sites-enabled/' . $domain;
+    $siteContents = @file_get_contents($sitePath);
+    if (($known['ok'] ?? false) === true
+        && is_string($siteContents)
+        && PostbackGatewayProvisioner::isManagedConfig($siteContents)) {
+        continue;
+    }
+    if ((int)($known['attempts'] ?? 0) >= PostbackGatewayProvisioner::MAX_ATTEMPTS) {
+        continue;
+    }
+
+    if (filter_var($gatewayPublicIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+        $gatewayState[$domain] = [
+            'ok' => false,
+            'attempts' => (int)($known['attempts'] ?? 0),
+            'message' => 'No valid public IPv4 address was detected, so publishing was not attempted.',
+            'checked' => time(),
+        ];
+        $gatewayChanged = true;
+        continue;
+    }
+
+    $dns = PostbackGatewayDns::judge(
+        PostbackGatewayDns::resolve($domain, DNS_A),
+        PostbackGatewayDns::resolve($domain, DNS_AAAA),
+        $gatewayPublicIp,
+        $domain
+    );
+    if (!$dns->ok) {
+        $gatewayState[$domain] = [
+            'ok' => false,
+            'attempts' => (int)($known['attempts'] ?? 0),
+            'message' => $dns->message,
+            'checked' => time(),
+        ];
+        $gatewayChanged = true;
+        continue;
+    }
+
+    $command = sprintf(
+        'AMARELOTDS_APP_DIR=%s AMARELOTDS_DOMAINS=%s bash %s --add-postback-gateway 2>&1',
+        escapeshellarg($root),
+        escapeshellarg($domain),
+        escapeshellarg($root . '/install.sh')
+    );
+    $output = [];
+    $exit = 0;
+    exec($command, $output, $exit);
+    $tail = trim(implode("\n", array_slice($output, -6)));
+    $gatewayState[$domain] = [
+        'ok' => $exit === 0,
+        'attempts' => $exit === 0 ? 0 : (int)($known['attempts'] ?? 0) + 1,
+        'message' => $exit === 0
+            ? $domain . ' published as a postback-only HTTPS gateway.'
+            : 'Publishing failed: ' . ($tail !== '' ? $tail : 'exit code ' . $exit),
+        'checked' => time(),
+    ];
+    $gatewayChanged = true;
+    ytds_log(
+        $exit === 0 ? 'info' : 'error',
+        'cron',
+        $exit === 0 ? 'Postback gateway published on nginx' : 'Postback gateway publishing failed',
+        ['hostname' => $domain, 'exit' => $exit, 'output' => $tail]
+    );
+}
+
+if ($gatewayChanged) {
+    PostbackGatewayProvisioner::write($root, $gatewayState);
+    @chown(PostbackGatewayProvisioner::statePath($root), 'www-data');
+    @chmod(PostbackGatewayProvisioner::statePath($root), 0664);
 }

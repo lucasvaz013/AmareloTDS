@@ -543,6 +543,48 @@ final class CloudflareDomains
         $result = self::call($settings, 'POST', '/zones/' . rawurlencode($zoneId) . '/dns_records', $body);
         return new DomainStep('record', $result['ok'], $result['ok'] ? $hostname . ' created and pointed here.' : $result['message'], ['hostname' => $hostname]);
     }
+
+    /** @return array{ok:bool,message:string,records:list<array<string,mixed>>} */
+    public static function listDnsRecords(array $settings, string $zoneId, string $hostname): array
+    {
+        $result = self::call(
+            $settings,
+            'GET',
+            '/zones/' . rawurlencode($zoneId) . '/dns_records?name=' . rawurlencode($hostname) . '&per_page=100'
+        );
+        return [
+            'ok' => $result['ok'],
+            'message' => $result['message'],
+            'records' => $result['ok'] && is_array($result['result']) ? array_values($result['result']) : [],
+        ];
+    }
+
+    /** @param array<string,mixed> $body */
+    public static function writeDnsRecord(array $settings, string $zoneId, string $recordId, array $body): DomainStep
+    {
+        $path = '/zones/' . rawurlencode($zoneId) . '/dns_records';
+        $method = 'POST';
+        if ($recordId !== '') {
+            $path .= '/' . rawurlencode($recordId);
+            $method = 'PUT';
+        }
+        $result = self::call($settings, $method, $path, $body);
+        return new DomainStep(
+            'record',
+            $result['ok'],
+            $result['ok'] ? (string)($body['name'] ?? 'DNS record') . ' points directly to this server.' : $result['message']
+        );
+    }
+
+    public static function deleteDnsRecord(array $settings, string $zoneId, string $recordId): DomainStep
+    {
+        $result = self::call(
+            $settings,
+            'DELETE',
+            '/zones/' . rawurlencode($zoneId) . '/dns_records/' . rawurlencode($recordId)
+        );
+        return new DomainStep('record_cleanup', $result['ok'], $result['ok'] ? 'Conflicting address record removed.' : $result['message']);
+    }
 }
 
 final class DomainVerifier
