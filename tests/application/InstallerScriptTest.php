@@ -61,6 +61,7 @@ class InstallerScriptTest extends TestCase
         self::assertStringContainsString('# amarelotds-postback-gateway v1', $this->script);
         self::assertStringContainsString('[ "$first_line" = "$marker" ]', $this->script);
         self::assertStringContainsString('location = /api/postback.php', $this->script);
+        self::assertStringContainsString("awk '\$1 !~ /^::ffff:/ {print \$1}'", $this->script);
         $this->assertStringContainsString('location / {', $this->script);
         $this->assertStringContainsString('return 404;', $this->script);
         $this->assertStringContainsString('Refusing to overwrite an unmanaged nginx site', $this->script);

@@ -383,7 +383,8 @@ verify_domain_points_here() {
 
 resolve_domain_ipv6() {
     local domain="$1"
-    getent ahostsv6 "$domain" 2>/dev/null | awk '{print $1}' | sort -u
+    # ahostsv6 synthesizes ::ffff:<ipv4> for A-only names. That is not an AAAA record.
+    getent ahostsv6 "$domain" 2>/dev/null | awk '$1 !~ /^::ffff:/ {print $1}' | sort -u
 }
 
 verify_postback_gateway_dns() {
