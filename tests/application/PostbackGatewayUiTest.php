@@ -22,6 +22,8 @@ final class PostbackGatewayUiTest extends TestCase
         self::assertStringContainsString('Gateway DNS replacement must be confirmed.', $endpoint);
         self::assertStringContainsString("case 'gateway-remove':", $endpoint);
         self::assertStringContainsString("'postback_gateways'", $endpoint);
+        self::assertStringContainsString('That domain is not a registered postback gateway.', $endpoint);
+        self::assertStringContainsString('PostbackGatewayProvisioner::retryState', $endpoint);
     }
 
     public function testBrowserSendsConfirmationAndRendersGatewayState(): void

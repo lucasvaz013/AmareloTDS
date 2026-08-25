@@ -325,7 +325,15 @@ function domains_handle_request(): void
                 return;
 
             case 'gateway-resume':
+                if (PostbackGatewayRegistry::find(PostbackGatewayRegistry::all($settings), $domain) === null) {
+                    domains_send(['error' => 'That domain is not a registered postback gateway.'], 422);
+                    return;
+                }
                 $publicIp = integrations_detect_public_ipv4();
+                $stateRoot = dirname(__DIR__);
+                $known = PostbackGatewayProvisioner::read($stateRoot);
+                $known[$domain] = PostbackGatewayProvisioner::retryState(is_array($known[$domain] ?? null) ? $known[$domain] : []);
+                PostbackGatewayProvisioner::write($stateRoot, $known);
                 $outcome = postback_gateway_sync_cloudflare($settings, $domain, $publicIp, dirname(__DIR__));
                 $saved = postback_gateway_persist(
                     $manager,

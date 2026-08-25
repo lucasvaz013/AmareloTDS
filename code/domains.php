@@ -547,16 +547,25 @@ final class CloudflareDomains
     /** @return array{ok:bool,message:string,records:list<array<string,mixed>>} */
     public static function listDnsRecords(array $settings, string $zoneId, string $hostname): array
     {
-        $result = self::call(
-            $settings,
-            'GET',
-            '/zones/' . rawurlencode($zoneId) . '/dns_records?name=' . rawurlencode($hostname) . '&per_page=100'
-        );
-        return [
-            'ok' => $result['ok'],
-            'message' => $result['message'],
-            'records' => $result['ok'] && is_array($result['result']) ? array_values($result['result']) : [],
-        ];
+        $records = [];
+        $page = 1;
+        do {
+            $result = self::call(
+                $settings,
+                'GET',
+                '/zones/' . rawurlencode($zoneId)
+                    . '/dns_records?name=' . rawurlencode($hostname)
+                    . '&per_page=100&page=' . $page
+            );
+            if (!$result['ok']) {
+                return ['ok' => false, 'message' => $result['message'], 'records' => []];
+            }
+            $batch = is_array($result['result']) ? array_values($result['result']) : [];
+            $records = array_merge($records, $batch);
+            $page++;
+        } while (count($batch) === 100 && $page <= 10);
+
+        return ['ok' => true, 'message' => '', 'records' => $records];
     }
 
     /** @param array<string,mixed> $body */

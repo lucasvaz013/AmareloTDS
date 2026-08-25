@@ -74,29 +74,25 @@ foreach ($pending as $entry) {
     }
 }
 
-$gatewayChanged = 0;
-foreach ($gatewayList as $entry) {
-    $name = DomainName::normalize((string)($entry['name'] ?? ''));
-    if (!DomainName::isValid($name) || (string)($entry['source'] ?? '') !== 'cloudflare') {
-        continue;
-    }
-    $previous = (string)($entry['status'] ?? '');
+$plan = PostbackGatewayRegistry::refreshSavePlan($gatewayList);
+$updates = [];
+foreach ($plan['pending'] as $name) {
     try {
         $outcome = postback_gateway_sync_cloudflare($settings, $name, $publicIp, $root);
     } catch (Throwable $e) {
         ytds_log('error', 'cron', 'Postback gateway refresh failed: ' . $e->getMessage(), ['domain' => $name]);
         continue;
     }
-    $gatewayList = PostbackGatewayRegistry::put(
-        $gatewayList,
-        $name,
-        'cloudflare',
-        $outcome->zoneId,
-        time(),
-        $outcome->status,
-        $outcome->message
-    );
-    $gatewayChanged++;
+    $updates[$name] = [
+        'status' => $outcome->status,
+        'detail' => $outcome->message,
+        'zone_id' => $outcome->zoneId,
+    ];
+    $previous = '';
+    $existing = PostbackGatewayRegistry::find($gatewayList, $name);
+    if (is_array($existing)) {
+        $previous = (string)($existing['status'] ?? '');
+    }
     if ($outcome->status !== $previous) {
         ytds_log('info', 'cron', 'Postback gateway status changed to ' . $outcome->status, [
             'domain' => $name,
@@ -105,6 +101,9 @@ foreach ($gatewayList as $entry) {
         ]);
     }
 }
+$plan = PostbackGatewayRegistry::refreshSavePlan($gatewayList, $updates);
+$gatewayChanged = $plan['save'] ? count($updates) : 0;
+$gatewayList = $plan['domains'];
 
 if ($changed === 0 && $gatewayChanged === 0) {
     exit(0);

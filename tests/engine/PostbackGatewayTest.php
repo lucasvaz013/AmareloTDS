@@ -115,4 +115,46 @@ final class PostbackGatewayTest extends TestCase
         self::assertSame(DomainStatus::ERROR, $outcome->status);
         self::assertStringContainsString('valid public IPv4', $outcome->message);
     }
+
+    public function testRefreshSavePlanIgnoresReadyGatewaysAndKeepsPendingOnes(): void
+    {
+        $list = PostbackGatewayRegistry::put([], 'ready.example', 'cloudflare', 'z1', 1, DomainStatus::READY, 'ok');
+        $list = PostbackGatewayRegistry::put($list, 'pending.example', 'cloudflare', 'z2', 2, DomainStatus::CHECKING, 'waiting');
+
+        $plan = PostbackGatewayRegistry::refreshSavePlan($list);
+
+        self::assertFalse($plan['save']);
+        self::assertSame(['pending.example'], $plan['pending']);
+    }
+
+    public function testRefreshSavePlanSavesOnlyWhenAPendingStatusChanges(): void
+    {
+        $list = PostbackGatewayRegistry::put([], 'pending.example', 'cloudflare', 'z2', 2, DomainStatus::CHECKING, 'waiting');
+        $plan = PostbackGatewayRegistry::refreshSavePlan($list, [
+            'pending.example' => ['status' => DomainStatus::READY, 'detail' => 'published', 'zone_id' => 'z2'],
+        ]);
+
+        self::assertTrue($plan['save']);
+        self::assertSame(DomainStatus::READY, $plan['domains'][0]['status']);
+    }
+
+    public function testResumeRequiresAnExistingRegistryEntry(): void
+    {
+        $list = PostbackGatewayRegistry::put([], 'example.com', 'cloudflare', 'zone-1', 1);
+
+        self::assertNotNull(PostbackGatewayRegistry::find($list, 'example.com'));
+        self::assertNull(PostbackGatewayRegistry::find($list, 'other.example'));
+    }
+
+    public function testProvisioningRetryClearsExhaustedAttempts(): void
+    {
+        $cleared = PostbackGatewayProvisioner::retryState([
+            'ok' => false,
+            'attempts' => PostbackGatewayProvisioner::MAX_ATTEMPTS,
+            'message' => 'certbot failed.',
+        ]);
+
+        self::assertSame(0, $cleared['attempts']);
+        self::assertFalse($cleared['ok']);
+    }
 }

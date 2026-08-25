@@ -71,6 +71,56 @@ final class PostbackGatewayRegistry
     {
         return ['version' => 1, 'domains' => array_values($domains)];
     }
+
+    /** @param list<array<string, mixed>> $current */
+    public static function find(array $current, string $domain): ?array
+    {
+        $domain = DomainName::normalize($domain);
+        foreach ($current as $entry) {
+            if (strcasecmp((string)($entry['name'] ?? ''), $domain) === 0) {
+                return $entry;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Cron writes only when a pending gateway actually changed. Ready rows stay
+     * out of the sweep so a 5-minute loop cannot clobber a concurrent panel edit.
+     *
+     * @param list<array<string, mixed>> $current
+     * @param array<string, array{status?:string,detail?:string,zone_id?:string}> $updates
+     * @return array{save:bool,pending:list<string>,domains:list<array<string,mixed>>}
+     */
+    public static function refreshSavePlan(array $current, array $updates = []): array
+    {
+        $pending = [];
+        $save = false;
+        foreach ($current as $entry) {
+            $name = DomainName::normalize((string)($entry['name'] ?? ''));
+            if (!DomainName::isValid($name)
+                || (string)($entry['source'] ?? '') !== 'cloudflare'
+                || (string)($entry['status'] ?? '') === DomainStatus::READY) {
+                continue;
+            }
+            $pending[] = $name;
+            $update = $updates[$name] ?? null;
+            if (!is_array($update)) {
+                continue;
+            }
+            $current = self::put(
+                $current,
+                $name,
+                'cloudflare',
+                (string)($update['zone_id'] ?? ''),
+                time(),
+                (string)($update['status'] ?? DomainStatus::CHECKING),
+                (string)($update['detail'] ?? '')
+            );
+            $save = true;
+        }
+        return ['save' => $save, 'pending' => $pending, 'domains' => array_values($current)];
+    }
 }
 
 final class PostbackGatewayDns
@@ -204,6 +254,15 @@ final class PostbackGatewayProvisioner
             return new DomainStep('nginx', false, $message . ' Giving up after ' . $attempts . ' attempts — fix the cause and use Check now.', ['exhausted' => true]);
         }
         return new DomainStep('nginx', false, $message . ' Retrying automatically.', ['attempts' => $attempts]);
+    }
+
+    /** @param array<string, mixed> $known @return array<string, mixed> */
+    public static function retryState(array $known): array
+    {
+        $known['ok'] = false;
+        $known['attempts'] = 0;
+        $known['checked'] = time();
+        return $known;
     }
 }
 
