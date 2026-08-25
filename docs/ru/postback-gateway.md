@@ -35,7 +35,7 @@ Gateway не является доменом кампании или вторы�
 - `refresh_domains.php` под `www-data` сверяет Cloudflare DNS;
 - `provision_domains.php` под root вызывает `install.sh --add-postback-gateway`, проверяет nginx и HTTPS.
 
-Root cron принимает только конфиги с marker `# amarelotds-postback-gateway v1` и не перезаписывает чужой сайт. Ready gateway продолжает проверяться, поэтому DNS drift исправляется автоматически.
+Root cron принимает только конфиги с marker `# amarelotds-postback-gateway v1` и не перезаписывает чужой сайт. Ready gateway не переписывается каждые 5 минут, чтобы не затереть правку из панели; **Check now** заново сверяет DNS и сбрасывает исчерпанные nginx attempts.
 
 Удаление из панели прекращает сверку, но намеренно оставляет DNS и nginx на месте, чтобы случайно не остановить активную интеграцию.
 

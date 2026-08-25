@@ -35,7 +35,7 @@ State lives in `settings.local.php` under the versioned `postbackGateway` object
 - `refresh_domains.php` runs as `www-data`, reconciles Cloudflare DNS, and updates status;
 - `provision_domains.php` runs as root, calls `install.sh --add-postback-gateway`, validates nginx, and requests/renews HTTPS.
 
-The root cron accepts only nginx files carrying `# amarelotds-postback-gateway v1` and refuses to overwrite an unrelated site with the same hostname. A ready gateway continues to be checked, so DNS drift is repaired automatically.
+The root cron accepts only nginx files carrying `# amarelotds-postback-gateway v1` and refuses to overwrite an unrelated site with the same hostname. Ready gateways are left alone by the 5-minute sweep so a concurrent panel edit cannot be overwritten; use **Check now** to re-run DNS and reset exhausted nginx attempts.
 
 Removing a gateway from the panel stops reconciliation but deliberately leaves DNS and nginx untouched. This avoids taking a live partner integration offline by accident; cleanup is an explicit infrastructure operation.
 
