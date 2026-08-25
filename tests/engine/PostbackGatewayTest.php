@@ -157,4 +157,17 @@ final class PostbackGatewayTest extends TestCase
         self::assertSame(0, $cleared['attempts']);
         self::assertFalse($cleared['ok']);
     }
+
+    public function testStatusTreatsALiveManagedNginxSiteAsPublished(): void
+    {
+        $managed = "# amarelotds-postback-gateway v1\nserver { return 404; }\n";
+        $ready = PostbackGatewayProvisioner::statusFor(
+            ['example.com' => ['ok' => false, 'attempts' => 0, 'message' => 'retry']],
+            'example.com',
+            $managed
+        );
+
+        self::assertTrue($ready->ok);
+        self::assertStringContainsString('serves only the HTTPS postback endpoint', $ready->message);
+    }
 }

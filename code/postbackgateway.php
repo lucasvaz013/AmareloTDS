@@ -242,9 +242,16 @@ final class PostbackGatewayProvisioner
         }
     }
 
-    public static function statusFor(array $state, string $domain): DomainStep
+    public static function statusFor(array $state, string $domain, ?string $siteContents = null): DomainStep
     {
         $entry = is_array($state[$domain] ?? null) ? $state[$domain] : [];
+        if ($siteContents === null) {
+            $live = @file_get_contents('/etc/nginx/sites-enabled/' . $domain);
+            $siteContents = is_string($live) ? $live : null;
+        }
+        if (is_string($siteContents) && self::isManagedConfig($siteContents)) {
+            return new DomainStep('nginx', true, $domain . ' serves only the HTTPS postback endpoint.', ['checked' => $entry['checked'] ?? time()]);
+        }
         if (($entry['ok'] ?? false) === true) {
             return new DomainStep('nginx', true, $domain . ' serves only the HTTPS postback endpoint.', ['checked' => $entry['checked'] ?? 0]);
         }
