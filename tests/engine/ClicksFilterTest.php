@@ -21,7 +21,7 @@ final class ClicksFilterTest extends TestCase
         $this->db->seedCampaign(1, 'C', []);
         $this->now = time();
         $this->db->seedClicks([
-            ['campaign_id' => 1, 'time' => $this->now - 10, 'country' => 'US', 'device' => 'desktop', 'clickid' => 'ab1', 'userid' => 'u1', 'payout' => 5, 'params' => '{"subid":"s1","aff":"x"}'],
+            ['campaign_id' => 1, 'time' => $this->now - 10, 'country' => 'US', 'device' => 'desktop', 'clickid' => 'ab1', 'userid' => 'u1', 'payout' => 5, 'params' => '{"subid":"s1","aff":"x","_ytds_network_id":"net-a","_ytds_network_name":"Network A"}'],
             ['campaign_id' => 1, 'time' => $this->now - 20, 'country' => 'BR', 'device' => 'mobile', 'clickid' => 'ab2', 'userid' => 'u2', 'payout' => 3, 'params' => '{"subid":"s2"}'],
             ['campaign_id' => 1, 'time' => $this->now - 30, 'country' => 'US', 'device' => 'mobile', 'clickid' => 'cd3', 'userid' => 'u3', 'payout' => 9, 'params' => '{"subid":"s3"}'],
             ['campaign_id' => 1, 'time' => $this->now - 40, 'country' => 'US', 'device' => 'desktop', 'clickid' => 'ef4', 'userid' => 'u4', 'payout' => 1, 'params' => '{"subid":"s4"}'],
@@ -76,6 +76,22 @@ final class ClicksFilterTest extends TestCase
     {
         $res = $this->clicks(['filter' => ['param.subid:=:s3']]);
         $this->assertSame(1, $res['count']);
+    }
+
+    public function testNetworkIsProjectedAndFilteredByFrozenId(): void
+    {
+        $rows = $this->clicks([])['clicks'];
+        $routed = array_values(array_filter($rows, static fn(array $row): bool => $row['clickid'] === 'ab1'))[0];
+        $legacy = array_values(array_filter($rows, static fn(array $row): bool => $row['clickid'] === 'ab2'))[0];
+
+        $this->assertSame('net-a', $routed['network_id']);
+        $this->assertSame('Network A', $routed['network']);
+        $this->assertNull($legacy['network_id']);
+        $this->assertNull($legacy['network']);
+
+        $filtered = $this->clicks(['filter' => ['network:=:net-a']]);
+        $this->assertSame(1, $filtered['count']);
+        $this->assertSame('ab1', $filtered['clicks'][0]['clickid']);
     }
 
     public function testSearchMatchesClickidSubstring(): void

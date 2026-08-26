@@ -77,6 +77,7 @@ function dest_network_options(array $networks, string $selectedId): string
                     <button type="button" class="btn btn-danger campaign-icon-btn destination-remove" title="Remove"><i class="bi bi-trash"></i></button>
                 </div>
                 <div class="destination-preview<?= $dangling ? ' is-dangling' : '' ?>">
+                    <span class="destination-network-name"><?= htmlspecialchars(isset($networksById[$dest->networkId]) ? $networksById[$dest->networkId]->name : ($dangling ? 'Missing Network' : 'No Network'), ENT_QUOTES) ?></span>
                     <span class="destination-preview-label"><?= $dangling ? 'network missing — base only:' : 'effective:' ?></span>
                     <code class="destination-preview-url"><?= htmlspecialchars($effective, ENT_QUOTES) ?></code>
                 </div>
@@ -99,6 +100,7 @@ function dest_network_options(array $networks, string $selectedId): string
             <button type="button" class="btn btn-danger campaign-icon-btn destination-remove" title="Remove"><i class="bi bi-trash"></i></button>
         </div>
         <div class="destination-preview">
+            <span class="destination-network-name">No Network</span>
             <span class="destination-preview-label">effective:</span>
             <code class="destination-preview-url"></code>
         </div>
@@ -108,7 +110,7 @@ function dest_network_options(array $networks, string $selectedId): string
 <script id="destinationsConfig" type="application/json"><?= json_encode([
     'endpoint' => get_admin_base_url() . 'destinationseditor.php',
     'networks' => array_values(array_map(
-        fn(Network $n): array => ['id' => $n->id, 'params' => $n->params],
+        fn(Network $n): array => ['id' => $n->id, 'name' => $n->name, 'params' => $n->params],
         $networksById
     )),
 ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?></script>

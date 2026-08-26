@@ -4,6 +4,7 @@ require_once __DIR__ . '/securitycheck.php';
 require_once __DIR__ . '/../settings.php';
 require_once __DIR__ . '/../db/db.php';
 require_once __DIR__ . '/../destinations.php';
+require_once __DIR__ . '/../adminops.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -52,6 +53,15 @@ switch ($action) {
         }
         $clean = DestinationLibrary::sanitize($raw, fn(): string => bin2hex(random_bytes(6)));
         $settings = $db->get_common_settings();
+        try {
+            (new AdminOps($db))->assertRemovedLibraryIdsUnused(
+                'destination',
+                is_array($settings['destinations'] ?? null) ? $settings['destinations'] : [],
+                $clean
+            );
+        } catch (YtdsOpError $e) {
+            de_error($e->getMessage() . ($e->hint !== '' ? ' (' . $e->hint . ')' : ''), $e->httpStatus);
+        }
         $settings['destinations'] = $clean;
         if ($db->set_common_settings($settings) === false) {
             de_error('Could not save destinations', 500);

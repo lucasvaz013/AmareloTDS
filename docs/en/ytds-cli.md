@@ -51,7 +51,7 @@ The `token` is the instance's `adminApiToken` and is sent as `Authorization: Bea
 |---|---|
 | 0 | success |
 | 1 | internal/environment error (`INTERNAL`, `SETTINGS_CORRUPT`, `TRANSPORT_ERROR`, `WRITE_FAILED`), or `doctor` reporting a failed check |
-| 2 | input validation (`USAGE`, `INVALID_ARG`, `UNKNOWN_ACTION`, `VALIDATION`) |
+| 2 | input/conflict validation (`USAGE`, `INVALID_ARG`, `UNKNOWN_ACTION`, `VALIDATION`, `RESOURCE_IN_USE`) |
 | 3 | not found (`DB_NOT_FOUND`, `CAMPAIGN_NOT_FOUND`, `SECTION_NOT_FOUND`, `NETWORK_NOT_FOUND`, `DESTINATION_NOT_FOUND`, `LANDING_NOT_FOUND`) |
 | 4 | auth/config (`AUTH_INVALID`, `API_DISABLED`, `CONFIG_MISSING`, `CONFIG_INVALID`) |
 | 5 | domain conflict (`DOMAIN_CONFLICT`) |
@@ -63,6 +63,7 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 - Reads mask secrets: `apikey`, the CAPI access token, and postback keys come back as `<redacted>`.
 - Writes read the raw stored settings, so a mutation can never persist `<redacted>` over a real secret.
 - Domain changes are validated against every other campaign; an overlap is refused with exit 5 in both dry run and commit.
+- Network and Destination deletion is refused with `RESOURCE_IN_USE` when a campaign Checkout Route still references the entry; the hint lists each campaign, flow, and step. The Networks/Destinations panel pages use the same check when a save would drop those ids.
 - `create` builds from a versioned template with the author's three dangerous defaults already removed, and refuses any template that still references the author's trackers (Guardrail #9).
 
 ## Global flags
@@ -81,8 +82,8 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 |---|---|
 | `campaigns list` | narrow list of campaigns: `id`, `name`, `domains`, flow count |
 | `campaign get <id>` | one campaign; `--section <dot.path>` returns a subtree, `--full` returns the whole (redacted) settings |
-| `stats --campaign <id>` | aggregate metrics for a date window; `--from`/`--to` in `DD.MM.YY`, `--columns`, `--groupby` |
-| `clicks --campaign <id>` | recent clicks (narrow columns); `--view allowed\|blocked\|leads\|trafficback`, `--from`/`--to`, `--limit`, `--page`, `--sort <field>` (incl. `param.KEY`), `--dir asc\|desc`, repeatable `--filter field:op:value` with `--filter-cond and\|or`, repeatable `--param KEY` to project `param.*` columns, `--search <term>`, `--full` |
+| `stats --campaign <id>` | aggregate metrics for a date window; `--from`/`--to` in `DD.MM.YY`, `--columns`, `--groupby` (including `network`) |
+| `clicks --campaign <id>` | recent clicks (narrow columns include frozen `network_id`/`network`); `--view allowed\|blocked\|leads\|trafficback`, `--from`/`--to`, `--limit`, `--page`, `--sort <field>` (including `network` and `param.KEY`), `--dir asc\|desc`, repeatable `--filter field:op:value` (`network` values are ids) with `--filter-cond and\|or`, repeatable `--param KEY`, `--search <term>`, `--full` |
 | `landing list` | landing folders with metadata |
 | `networks list` | global Networks library (`common.settings`) |
 | `destinations list` | global Destinations with their network resolved into an effective URL |

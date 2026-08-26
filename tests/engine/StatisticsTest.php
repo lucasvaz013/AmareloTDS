@@ -82,6 +82,42 @@ class StatisticsTest extends TestCase
         $this->assertEquals(3, $result[0]['uniques']);
     }
 
+    public function testNetworkGroupingUsesFrozenNameButKeepsIdsSeparate(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'n1', 'params' => '{"_ytds_network_id":"net-a","_ytds_network_name":"Checkout"}'],
+            ['clickid' => 'n2', 'params' => '{"_ytds_network_id":"net-b","_ytds_network_name":"Checkout"}'],
+            ['clickid' => 'n3', 'params' => '{"_ytds_network_id":"net-a","_ytds_network_name":"Old Checkout"}'],
+            ['clickid' => 'legacy', 'params' => '{}'],
+        ]);
+
+        $result = $this->stat(['clicks'], ['network']);
+
+        $this->assertCount(3, $result, 'homonymous networks stay separate and one ID is not split by renamed labels');
+        $this->assertSame(['net-a', 'net-b', null], array_column($result, 'network_id'));
+        $this->assertSame([2, 1, 1], array_column($result, 'clicks'));
+        $this->assertContains($result[0]['group'], ['Checkout', 'Old Checkout']);
+        $this->assertSame('Checkout', $result[1]['group']);
+        $this->assertSame('Unknown', $result[2]['group']);
+    }
+
+    public function testNetworkFilterUsesFrozenNetworkId(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'n1', 'params' => '{"_ytds_network_id":"net-a","_ytds_network_name":"A"}'],
+            ['clickid' => 'n2', 'params' => '{"_ytds_network_id":"net-b","_ytds_network_name":"B"}'],
+        ]);
+
+        $result = $this->db->get_statistics(
+            ['clicks'], ['network'], 1, '0', '9999999999', 'UTC',
+            ['condition' => 'AND', 'rules' => [['field' => 'network', 'operator' => '=', 'value' => 'net-b']]]
+        );
+
+        $this->assertCount(1, $result);
+        $this->assertSame('net-b', $result[0]['network_id']);
+        $this->assertSame('B', $result[0]['group']);
+    }
+
     public function testMvtCombinationAndSingleTestGrouping(): void
     {
         $this->db->seedClicks([

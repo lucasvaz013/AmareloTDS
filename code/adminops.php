@@ -45,7 +45,7 @@ final class AdminOps
     public const DEFAULT_STATS_COLUMNS = ['clicks', 'uniques', 'conversion', 'revenue', 'costs', 'profit', 'roi', 'epc'];
 
     /** Narrow click projection; --full returns the whole row. */
-    public const CLICK_NARROW_COLUMNS = ['time', 'clickid', 'country', 'device', 'status', 'payout'];
+    public const CLICK_NARROW_COLUMNS = ['time', 'clickid', 'country', 'device', 'network_id', 'network', 'status', 'payout'];
 
     public const CLICK_VIEWS = ['allowed', 'blocked', 'leads', 'trafficback'];
 
@@ -287,6 +287,7 @@ final class AdminOps
         if (count($kept) === count($raw)) {
             throw new YtdsOpError('NETWORK_NOT_FOUND', 404, 'network not found: ' . $id, 'ytds networks list');
         }
+        $this->assertRemovedLibraryIdsUnused('network', $raw, $kept);
         $clean = NetworkLibrary::sanitize($kept, $this->idGen());
         if ($commit) {
             $common['networks'] = $clean;
@@ -354,6 +355,7 @@ final class AdminOps
         if (count($kept) === count($raw)) {
             throw new YtdsOpError('DESTINATION_NOT_FOUND', 404, 'destination not found: ' . $id, 'ytds destinations list');
         }
+        $this->assertRemovedLibraryIdsUnused('destination', $raw, $kept);
         $clean = DestinationLibrary::sanitize($kept, $this->idGen());
         if ($commit) {
             $common['destinations'] = $clean;
@@ -387,6 +389,99 @@ final class AdminOps
             }
         }
         return [];
+    }
+
+    /**
+     * Panel library pages replace the whole catalog. Refuse dropping any id still referenced
+     * by Checkout Routes, using the same RESOURCE_IN_USE contract as CLI/API delete.
+     *
+     * @param array<int, mixed> $before
+     * @param array<int, mixed> $after
+     */
+    public function assertRemovedLibraryIdsUnused(string $resourceType, array $before, array $after): void
+    {
+        $beforeIds = $this->libraryIds($before);
+        $afterIds = $this->libraryIds($after);
+        foreach (array_diff($beforeIds, $afterIds) as $id) {
+            $usedBy = $this->checkoutRouteUsage($resourceType, $id);
+            if ($usedBy === []) {
+                continue;
+            }
+            throw new YtdsOpError(
+                'RESOURCE_IN_USE',
+                409,
+                $resourceType . ' is used by Checkout Routes: ' . $id,
+                'remove the Checkout Route reference first; used by ' . implode(', ', $usedBy)
+            );
+        }
+    }
+
+    /**
+     * @param array<int, mixed> $list
+     * @return array<int, string>
+     */
+    private function libraryIds(array $list): array
+    {
+        $ids = [];
+        foreach ($list as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $id = trim((string)($entry['id'] ?? ''));
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+        return $ids;
+    }
+
+    /** @return array<int, string> */
+    private function checkoutRouteUsage(string $resourceType, string $id): array
+    {
+        $usedBy = [];
+        foreach ($this->db->get_campaign_runtime_rows() as $campaign) {
+            $flows = $campaign['settings']['black']['flows'] ?? [];
+            if (!is_array($flows)) {
+                continue;
+            }
+            foreach ($flows as $flowIndex => $flow) {
+                if (!is_array($flow)) {
+                    continue;
+                }
+                $flowName = trim((string)($flow['name'] ?? '')) ?: 'Flow ' . ((int)$flowIndex + 1);
+                $steps = $flow['steps'] ?? [];
+                if (!is_array($steps)) {
+                    continue;
+                }
+                foreach ($steps as $stepIndex => $step) {
+                    if (!is_array($step) || !array_key_exists('checkout_routes', $step)) {
+                        continue;
+                    }
+                    $where = (string)$campaign['name'] . ': ' . $flowName . ' — step ' . ((int)$stepIndex + 1);
+                    $routes = $step['checkout_routes'];
+                    if (!is_array($routes)) {
+                        throw new YtdsOpError('SETTINGS_CORRUPT', 409, 'malformed Checkout Routes prevent safe library deletion', 'inspect ' . $where);
+                    }
+                    foreach ($routes as $route) {
+                        if (!is_array($route) || !isset($route['network_id']) || !is_array($route['links'] ?? null)) {
+                            throw new YtdsOpError('SETTINGS_CORRUPT', 409, 'malformed Checkout Routes prevent safe library deletion', 'inspect ' . $where);
+                        }
+                        if ($resourceType === 'network' && (string)$route['network_id'] === $id) {
+                            $usedBy[$where] = true;
+                        }
+                        foreach ($route['links'] as $link) {
+                            if (!is_array($link) || !isset($link['destination_id'])) {
+                                throw new YtdsOpError('SETTINGS_CORRUPT', 409, 'malformed Checkout Routes prevent safe library deletion', 'inspect ' . $where);
+                            }
+                            if ($resourceType === 'destination' && (string)$link['destination_id'] === $id) {
+                                $usedBy[$where] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return array_keys($usedBy);
     }
 
     // -- Landings library (filesystem folders under caching/landings) --

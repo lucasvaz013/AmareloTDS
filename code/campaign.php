@@ -396,6 +396,64 @@ final class StepFolderSettings implements JsonSerializable
     }
 }
 
+final class CheckoutRouteLinkSettings implements JsonSerializable
+{
+    public function __construct(public int $n, public string $destinationId)
+    {
+    }
+
+    public static function fromArray(array $arr): ?self
+    {
+        $n = (int)($arr['n'] ?? 0);
+        $destinationId = trim((string)($arr['destination_id'] ?? ''));
+        return $n >= 1 && $destinationId !== '' ? new self($n, $destinationId) : null;
+    }
+
+    public function jsonSerialize(): array
+    {
+        return ['n' => $this->n, 'destination_id' => $this->destinationId];
+    }
+}
+
+final class CheckoutRouteSettings implements JsonSerializable
+{
+    /** @param CheckoutRouteLinkSettings[] $links */
+    public function __construct(public string $networkId, public int $weight, public array $links)
+    {
+    }
+
+    public static function fromArray(array $arr): ?self
+    {
+        $networkId = trim((string)($arr['network_id'] ?? ''));
+        if ($networkId === '') {
+            return null;
+        }
+        $links = [];
+        foreach ((is_array($arr['links'] ?? null) ? $arr['links'] : []) as $rawLink) {
+            if (!is_array($rawLink)) {
+                continue;
+            }
+            $link = CheckoutRouteLinkSettings::fromArray($rawLink);
+            if ($link !== null) {
+                $links[] = $link;
+            }
+        }
+        return new self($networkId, max(0, (int)($arr['weight'] ?? 0)), $links);
+    }
+
+    public function jsonSerialize(): array
+    {
+        return [
+            'network_id' => $this->networkId,
+            'weight' => $this->weight,
+            'links' => array_map(
+                static fn(CheckoutRouteLinkSettings $link): array => $link->jsonSerialize(),
+                $this->links
+            ),
+        ];
+    }
+}
+
 class StepSettings implements JsonSerializable
 {
     public string $action;
@@ -404,6 +462,8 @@ class StepSettings implements JsonSerializable
     /** @var array<array{url: string, label: string, weight: int}> */
     public array $redirectUrls;
     public int $redirectType;
+    /** @var CheckoutRouteSettings[] */
+    public array $checkoutRoutes;
 
     public static function fromArray($arr): StepSettings
     {
@@ -435,7 +495,22 @@ class StepSettings implements JsonSerializable
             ];
         }
         $ss->redirectType = $arr['redirect']['type'] ?? 302;
+        $ss->checkoutRoutes = [];
+        foreach ((is_array($arr['checkout_routes'] ?? null) ? $arr['checkout_routes'] : []) as $route) {
+            if (!is_array($route)) {
+                continue;
+            }
+            $parsed = CheckoutRouteSettings::fromArray($route);
+            if ($parsed !== null) {
+                $ss->checkoutRoutes[] = $parsed;
+            }
+        }
         return $ss;
+    }
+
+    public function hasCheckoutRoutes(): bool
+    {
+        return $this->checkoutRoutes !== [];
     }
 
     public function isDirectLoad(string $folderName): bool
@@ -522,7 +597,11 @@ class StepSettings implements JsonSerializable
             "redirect" => [
                 "urls" => $this->redirectUrls,
                 "type" => $this->redirectType
-            ]
+            ],
+            "checkout_routes" => array_map(
+                static fn(CheckoutRouteSettings $route): array => $route->jsonSerialize(),
+                $this->checkoutRoutes
+            )
         ];
     }
 }

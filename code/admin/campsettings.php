@@ -614,7 +614,7 @@ global $c, $db, $campId;
             </div>
             </section>
 
-            <?php $lastSi = count($flow->steps) - 1; foreach ($flow->steps as $si => $step) { $isLast = ($si === $lastSi); ?>
+            <?php $lastSi = count($flow->steps) - 1; foreach ($flow->steps as $si => $step) { $isLast = ($si === $lastSi); $checkoutRoutesJson = json_encode($step->checkoutRoutes, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>
             <section id="sec-step-<?= $fi ?>-<?= $si ?>" class="camp-section step-section" data-flow-index="<?= $fi ?>" data-step-index="<?= $si ?>">
             <h5 class="flow-section-title"><?= htmlspecialchars($flow->name) ?> &rsaquo; Step <?= $si + 1 ?></h5>
 
@@ -660,6 +660,9 @@ global $c, $db, $campId;
                 </div>
                 <a href="javascript:void(0)" class="btn btn-primary campaign-action-btn flow-step-add-existing" data-fi="<?= $fi ?>" data-si="<?= $si ?>"><i class="bi bi-folder-symlink"></i> Add Existing</a>
                 <a href="javascript:void(0)" class="btn btn-info campaign-action-btn flow-step-upload-zip" data-fi="<?= $fi ?>" data-si="<?= $si ?>"><i class="bi bi-upload"></i> Upload ZIP</a>
+            </div>
+            <div class="flow-group flow-checkout-routes-group">
+                <div class="flow-checkout-routes-panel" data-checkout-routes="<?= htmlspecialchars($checkoutRoutesJson ?: '[]', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"></div>
             </div>
             </div>
 
@@ -1833,6 +1836,7 @@ global $c, $db, $campId;
     $__common = $db->get_common_settings();
     $__networksById = DestinationLibrary::indexNetworks($__common['networks'] ?? []);
     $__registeredDestinations = [];
+    $__checkoutRouteDestinations = [];
     foreach (($__common['destinations'] ?? []) as $__d) {
         if (!is_array($__d)) {
             continue;
@@ -1845,9 +1849,18 @@ global $c, $db, $campId;
             'name' => $__dest->name,
             'url' => DestinationLibrary::effectiveUrl($__dest, $__networksById),
         ];
+        $__checkoutRouteDestinations[] = [
+            'id' => $__dest->id,
+            'name' => $__dest->name,
+            'network_id' => $__dest->networkId,
+        ];
     }
     ?>
-    <script>window.REGISTERED_DESTINATIONS = <?= json_encode($__registeredDestinations, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;</script>
+    <script>
+        window.REGISTERED_DESTINATIONS = <?= json_encode($__registeredDestinations, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        window.CHECKOUT_ROUTE_NETWORKS = <?= json_encode(array_values(array_map(static fn(Network $__network): array => ['id' => $__network->id, 'name' => $__network->name], $__networksById)), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+        window.CHECKOUT_ROUTE_DESTINATIONS = <?= json_encode($__checkoutRouteDestinations, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
+    </script>
     <!-- CodeMirror 6 local bundles -->
     <script src="js/cm6/html.min.js"></script>
     <script>window.CM6_HTML = cm6;</script>
@@ -1951,6 +1964,9 @@ global $c, $db, $campId;
             <a href="javascript:void(0)" class="btn btn-primary campaign-action-btn flow-step-add-existing" data-fi="__FI__" data-si="__SI__"><i class="bi bi-folder-symlink"></i> Add Existing</a>
             <a href="javascript:void(0)" class="btn btn-info campaign-action-btn flow-step-upload-zip" data-fi="__FI__" data-si="__SI__"><i class="bi bi-upload"></i> Upload ZIP</a>
         </div></div>
+        <div class="flow-group flow-checkout-routes-group">
+            <div class="flow-checkout-routes-panel" data-checkout-routes="[]"></div>
+        </div>
 
         <div class="flow-step-redirects" style="display:none">
         <div class="flow-group"><span class="flow-group-title">Redirects</span>

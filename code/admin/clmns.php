@@ -36,6 +36,7 @@ class AvailableColumns
         "clientver",
         "ua",
         "params",
+        "network",
         "flow",
         "path",
         "step",
@@ -61,6 +62,7 @@ class AvailableColumns
         "clientver",
         "ua",
         "params",
+        "network",
         "flow",
         "path",
         "step",
@@ -97,6 +99,7 @@ class AvailableColumns
         "model",
         "client",
         "clientver",
+        "network",
         "flow",
         "step",
         "landing"
@@ -310,6 +313,13 @@ class TableColumns
                 "tooltip" => "FSTARTfunction(e, cell, onRendered){ var data = cell.getValue(); var keys = Object.keys(data).sort(); var formattedData = ''; keys.forEach(function(key) { if (data.hasOwnProperty(key)) { formattedData += key + '=' + data[key] + '<br>'; } }); return formattedData;}FEND",
                 "formatter" => "FSTARTfunction(cell, formatterParams, onRendered){var data = cell.getValue();var keys = Object.keys(data).sort();var formattedData = ''; keys.forEach(function(key) { if (data.hasOwnProperty(key)) { formattedData += key + '=' + data[key] + '<br>';}}); return formattedData;}FEND"
             ],
+            "network" => [
+                "title" => "Network",
+                "field" => "network",
+                "headerTooltip" => "Frozen checkout Network name; filters use the Network ID",
+                "editor" => false,
+                "headerFilter" => false,
+            ],
             "userid"=>[
                 "title" => "UserID",
                 "field" => "userid",
@@ -399,6 +409,12 @@ class TableColumns
             "title" => "Flow",
             "headerTooltip" => "Traffic flow",
             "field" => "flow",
+            "headerFilter" => "input",
+        ],
+        'network' => [
+            "title" => "Network",
+            "headerTooltip" => "Checkout Network frozen on the click",
+            "field" => "network",
             "headerFilter" => "input",
         ],
         'country' => [

@@ -680,7 +680,7 @@ function ytds_exit_for_code(string $code, int $httpStatus = 0): int
     static $map = [
         'AUTH_INVALID' => 4, 'API_DISABLED' => 4, 'AUTH_MISSING' => 4, 'CONFIG_MISSING' => 4, 'CONFIG_INVALID' => 4,
         'CAMPAIGN_NOT_FOUND' => 3, 'SECTION_NOT_FOUND' => 3, 'DB_NOT_FOUND' => 3,
-        'INVALID_ARG' => 2, 'UNKNOWN_ACTION' => 2, 'USAGE' => 2, 'METHOD_NOT_ALLOWED' => 2, 'VALIDATION' => 2,
+        'INVALID_ARG' => 2, 'UNKNOWN_ACTION' => 2, 'USAGE' => 2, 'METHOD_NOT_ALLOWED' => 2, 'VALIDATION' => 2, 'RESOURCE_IN_USE' => 2,
         'DOMAIN_CONFLICT' => 5,
         'NETWORK_NOT_FOUND' => 3, 'DESTINATION_NOT_FOUND' => 3, 'LANDING_NOT_FOUND' => 3,
         'SETTINGS_CORRUPT' => 1, 'INTERNAL' => 1, 'TRANSPORT_ERROR' => 1, 'WRITE_FAILED' => 1,

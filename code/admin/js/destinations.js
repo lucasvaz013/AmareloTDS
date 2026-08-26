@@ -14,7 +14,11 @@
 
     var endpoint = config.endpoint || 'destinationseditor.php';
     var paramsByNetwork = {};
-    (config.networks || []).forEach(function (n) { paramsByNetwork[n.id] = n.params || ''; });
+    var nameByNetwork = {};
+    (config.networks || []).forEach(function (n) {
+        paramsByNetwork[n.id] = n.params || '';
+        nameByNetwork[n.id] = n.name || n.id;
+    });
 
     var rows = document.getElementById('destinationsRows');
     var alertBox = document.getElementById('destinationsAlert');
@@ -55,10 +59,12 @@
         var params = paramsByNetwork.hasOwnProperty(networkId) ? paramsByNetwork[networkId] : '';
         var dangling = networkId !== '' && !paramsByNetwork.hasOwnProperty(networkId);
         var preview = row.querySelector('.destination-preview');
+        var networkName = row.querySelector('.destination-network-name');
         var label = row.querySelector('.destination-preview-label');
         var url = row.querySelector('.destination-preview-url');
         url.textContent = compose(base, params);
         preview.classList.toggle('is-dangling', dangling);
+        networkName.textContent = dangling ? 'Missing Network' : (nameByNetwork[networkId] || 'No Network');
         label.textContent = dangling ? 'network missing — base only:' : 'effective:';
     }
 

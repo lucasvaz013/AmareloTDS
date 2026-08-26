@@ -31,6 +31,7 @@ final class NetworksDestinationsTest extends TestCase
     {
         $n = Network::fromArray(['id' => 'abc', 'name' => ' BuyGoods ', 'params' => '?s={clickid}']);
         self::assertSame(['id' => 'abc', 'name' => 'BuyGoods', 'params' => 's={clickid}'], $n->jsonSerialize());
+        self::assertArrayNotHasKey('label', $n->jsonSerialize());
     }
 
     // ── Destination::normalizeBaseUrl ─────────────────────────────────────────────

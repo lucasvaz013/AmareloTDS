@@ -125,6 +125,120 @@ final class LibraryOpsTest extends TestCase
             $this->assertSame('DESTINATION_NOT_FOUND', $e->errorCode);
         }
     }
+
+    public function testNetworkDeleteIsBlockedWhenCheckoutRouteUsesIt(): void
+    {
+        $nid = $this->ops->networkAdd('N', '', true)['network']['id'];
+        $did = $this->ops->destinationAdd('D', 'https://example.com', $nid, true)['destination']['id'];
+        $this->db->seedCampaign(7, 'CampA', [
+            'black' => [
+                'flows' => [[
+                    'name' => 'F1',
+                    'steps' => [[
+                        'checkout_routes' => [[
+                            'network_id' => $nid,
+                            'links' => [['n' => 1, 'destination_id' => $did]],
+                        ]],
+                    ]],
+                ]],
+            ],
+        ]);
+
+        foreach ([false, true] as $commit) {
+            try {
+                $this->ops->networkDelete($nid, $commit);
+                $this->fail('expected YtdsOpError');
+            } catch (YtdsOpError $e) {
+                $this->assertSame('RESOURCE_IN_USE', $e->errorCode);
+                $this->assertStringContainsString('CampA: F1 — step 1', $e->hint);
+            }
+        }
+        $this->assertSame(1, $this->ops->networksList()['count']);
+    }
+
+    public function testDestinationDeleteIsBlockedWhenCheckoutRouteUsesIt(): void
+    {
+        $nid = $this->ops->networkAdd('N', '', true)['network']['id'];
+        $did = $this->ops->destinationAdd('D', 'https://example.com', $nid, true)['destination']['id'];
+        $this->db->seedCampaign(7, 'CampA', [
+            'black' => [
+                'flows' => [[
+                    'name' => 'F1',
+                    'steps' => [[
+                        'checkout_routes' => [[
+                            'network_id' => $nid,
+                            'links' => [['n' => 1, 'destination_id' => $did]],
+                        ]],
+                    ]],
+                ]],
+            ],
+        ]);
+
+        foreach ([false, true] as $commit) {
+            try {
+                $this->ops->destinationDelete($did, $commit);
+                $this->fail('expected YtdsOpError');
+            } catch (YtdsOpError $e) {
+                $this->assertSame('RESOURCE_IN_USE', $e->errorCode);
+                $this->assertStringContainsString('CampA: F1 — step 1', $e->hint);
+            }
+        }
+        $this->assertSame(1, $this->ops->destinations()['count']);
+    }
+
+    public function testMalformedCheckoutRoutesBlockLibraryDeletion(): void
+    {
+        $nid = $this->ops->networkAdd('N', '', true)['network']['id'];
+        $this->db->seedCampaign(7, 'Broken', [
+            'black' => ['flows' => [['name' => 'F1', 'steps' => [['checkout_routes' => 'broken']]]]],
+        ]);
+
+        try {
+            $this->ops->networkDelete($nid, false);
+            $this->fail('expected YtdsOpError');
+        } catch (YtdsOpError $e) {
+            $this->assertSame('SETTINGS_CORRUPT', $e->errorCode);
+            $this->assertStringContainsString('Broken: F1 — step 1', $e->hint);
+        }
+    }
+
+    public function testPanelCatalogReplaceBlocksRemovingIdsUsedByCheckoutRoutes(): void
+    {
+        $nid = $this->ops->networkAdd('N', '', true)['network']['id'];
+        $did = $this->ops->destinationAdd('D', 'https://example.com', $nid, true)['destination']['id'];
+        $this->db->seedCampaign(7, 'CampA', [
+            'black' => [
+                'flows' => [[
+                    'name' => 'F1',
+                    'steps' => [[
+                        'checkout_routes' => [[
+                            'network_id' => $nid,
+                            'links' => [['n' => 1, 'destination_id' => $did]],
+                        ]],
+                    ]],
+                ]],
+            ],
+        ]);
+
+        $common = $this->db->get_common_settings();
+        try {
+            $this->ops->assertRemovedLibraryIdsUnused('destination', $common['destinations'], []);
+            $this->fail('expected YtdsOpError');
+        } catch (YtdsOpError $e) {
+            $this->assertSame('RESOURCE_IN_USE', $e->errorCode);
+            $this->assertStringContainsString('CampA: F1 — step 1', $e->hint);
+        }
+        try {
+            $this->ops->assertRemovedLibraryIdsUnused('network', $common['networks'], []);
+            $this->fail('expected YtdsOpError');
+        } catch (YtdsOpError $e) {
+            $this->assertSame('RESOURCE_IN_USE', $e->errorCode);
+        }
+
+        $this->ops->assertRemovedLibraryIdsUnused('destination', $common['destinations'], $common['destinations']);
+        $this->ops->assertRemovedLibraryIdsUnused('network', $common['networks'], $common['networks']);
+    }
+
     private function makeZip(array $entries): string
     {
         $path = tempnam(sys_get_temp_dir(), 'ytds_ziptest_') . '.zip';

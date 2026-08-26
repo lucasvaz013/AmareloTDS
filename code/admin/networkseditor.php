@@ -4,6 +4,7 @@ require_once __DIR__ . '/securitycheck.php';
 require_once __DIR__ . '/../settings.php';
 require_once __DIR__ . '/../db/db.php';
 require_once __DIR__ . '/../networks.php';
+require_once __DIR__ . '/../adminops.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -50,6 +51,15 @@ switch ($action) {
         }
         $clean = NetworkLibrary::sanitize($raw, fn(): string => bin2hex(random_bytes(6)));
         $settings = $db->get_common_settings();
+        try {
+            (new AdminOps($db))->assertRemovedLibraryIdsUnused(
+                'network',
+                is_array($settings['networks'] ?? null) ? $settings['networks'] : [],
+                $clean
+            );
+        } catch (YtdsOpError $e) {
+            ne_error($e->getMessage() . ($e->hint !== '' ? ' (' . $e->hint . ')' : ''), $e->httpStatus);
+        }
         $settings['networks'] = $clean;
         if ($db->set_common_settings($settings) === false) {
             ne_error('Could not save networks', 500);

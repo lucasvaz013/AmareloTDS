@@ -61,6 +61,7 @@
                     {
                         "action": "folder",
                         "folders": [],
+                        "checkout_routes": [],
                         "redirect": {
                             "urls": [],
                             "type": 302

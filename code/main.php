@@ -11,6 +11,7 @@ require_once __DIR__ . '/requestfunc.php';
 require_once __DIR__ . '/actions.php';
 require_once __DIR__ . '/conversion.php';
 require_once __DIR__ . '/experiments.php';
+require_once __DIR__ . '/checkoutroutes.php';
 
 function traficback(array $clickParams): TdsAction
 {
@@ -135,6 +136,24 @@ function black(Campaign $c, int $flowIndex, array $clickparams): TdsAction
         return new TdsAction('black', 'die', "Invalid planned path for flow: " . $flow->name);
     }
 
+    try {
+        $checkoutSnapshot = build_checkout_snapshot(
+            $c,
+            $flow,
+            $clickparams,
+            $clickid,
+            $userid,
+            $db->get_common_settings()
+        );
+    } catch (Throwable $e) {
+        ytds_log('error', 'checkout_routes', 'Failed to plan Checkout Route', [
+            'campaign' => $c->campaignId,
+            'flow' => $flow->name,
+            'reason' => $e->getMessage(),
+        ]);
+        return new TdsAction('black', 'error', '500');
+    }
+
     experiment_save_flow_path(
         $c->campaignId,
         $flow->name,
@@ -146,12 +165,21 @@ function black(Campaign $c, int $flowIndex, array $clickparams): TdsAction
         : [];
 
     // Record one click per full pass and first entered step.
-    if (!$db->add_black_click($userid, $clickid, $clickparams, $plannedPath, $flow->name, $c->campaignId)) {
+    if (!$db->add_black_click(
+        $userid,
+        $clickid,
+        $clickparams,
+        $plannedPath,
+        $flow->name,
+        $c->campaignId,
+        $checkoutSnapshot
+    )) {
         return new TdsAction('black', 'die', 'Failed to record click');
     }
     if (!$db->add_click_step($clickid, 0, $plannedPath[0], $step0Mvt)) {
         return new TdsAction('black', 'die', 'Failed to record step entry');
     }
+    save_checkout_snapshot_experiment($c, $flow, $checkoutSnapshot);
 
     return render_black_action($c, $flow, $clickparams, $plannedPath, $clickid, $userid);
 }
@@ -174,6 +202,8 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
     $filtersNeedUniqueness = flows_use_uniqueness_filter($c->black->flows);
     $preselectedFlowIndex = null;
     $preselectedPath = null;
+    $preselectedCheckoutSnapshot = null;
+    $checkoutLibraries = $db->get_common_settings();
 
     try {
         if (!$filtersNeedUniqueness) {
@@ -198,6 +228,14 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
             if (!is_valid_planned_path($preselectedPath, $preselectedFlow->steps)) {
                 throw new RuntimeException('Invalid planned path for flow: ' . $preselectedFlow->name);
             }
+            $preselectedCheckoutSnapshot = build_checkout_snapshot(
+                $c,
+                $preselectedFlow,
+                $clkr->click_params,
+                $clickid,
+                $identity->userid,
+                $checkoutLibraries
+            );
         }
 
         $result = $db->immediate_transaction(function (SQLite3 $connection) use (
@@ -210,6 +248,8 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
             $filtersNeedUniqueness,
             $preselectedFlowIndex,
             $preselectedPath,
+            $preselectedCheckoutSnapshot,
+            $checkoutLibraries,
             &$stage,
             &$flowName,
             $db
@@ -219,6 +259,7 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
 
             $selectedFlowIndex = $preselectedFlowIndex;
             $plannedPath = $preselectedPath;
+            $checkoutSnapshot = $preselectedCheckoutSnapshot;
             $flowUniqueByName = [];
             $campaignUnique = null;
 
@@ -301,6 +342,14 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
                 if (!is_valid_planned_path($plannedPath, $flow->steps)) {
                     throw new RuntimeException('Invalid planned path for flow: ' . $flow->name);
                 }
+                $checkoutSnapshot = build_checkout_snapshot(
+                    $c,
+                    $flow,
+                    $clkr->click_params,
+                    $clickid,
+                    $identity->userid,
+                    $checkoutLibraries
+                );
             }
 
             $uniqueFlags = ($campaignUnique ? 2 : 0) | ($flowUnique ? 1 : 0);
@@ -316,7 +365,8 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
                 $c->campaignId,
                 $identity->hash,
                 $uniqueFlags,
-                $now
+                $now,
+                $checkoutSnapshot ?? []
             );
 
             $stage = 'click_step_insert';
@@ -336,6 +386,7 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
                 'flow_index' => $selectedFlowIndex,
                 'path' => $plannedPath,
                 'clickid' => $clickid,
+                'checkout_snapshot' => $checkoutSnapshot ?? [],
             ];
         });
     } catch (NoMatchingFlowException) {
@@ -374,6 +425,7 @@ function black_unique(Campaign $c, FiltrationCore $clkr): ?TdsAction
         $plannedPath,
         $c->saveUserFlow
     );
+    save_checkout_snapshot_experiment($c, $flow, $result['checkout_snapshot']);
 
     return render_black_action(
         $c,
@@ -471,6 +523,62 @@ function build_black_path(Campaign $c, FlowSettings $flow): array
         $plannedPath[] = $chosen;
     }
     return $plannedPath;
+}
+
+/** @param array<string, mixed> $common */
+function build_checkout_snapshot(
+    Campaign $campaign,
+    FlowSettings $flow,
+    array $clickParams,
+    string $clickid,
+    string $userid,
+    array $common
+): array {
+    foreach ($flow->steps as $stepIndex => $step) {
+        if (!$step->hasCheckoutRoutes()) {
+            continue;
+        }
+        $savedSelection = experiment_session_checkout_selection(
+            $campaign->campaignId,
+            $flow->name,
+            $step
+        );
+        if ($savedSelection === null && $campaign->saveUserFlow) {
+            $savedSelection = experiment_sticky_checkout_selection(
+                $campaign->campaignId,
+                $flow->name,
+                $step
+            );
+        }
+        $macros = new MacrosProcessor($campaign, $clickParams, $clickid, $userid);
+        return resolve_checkout_snapshot(
+            $stepIndex,
+            $step,
+            is_array($common['networks'] ?? null) ? $common['networks'] : [],
+            is_array($common['destinations'] ?? null) ? $common['destinations'] : [],
+            null,
+            static fn(string $url): string => $macros->replace_url_macros($url),
+            $savedSelection
+        );
+    }
+    return [];
+}
+
+function save_checkout_snapshot_experiment(
+    Campaign $campaign,
+    FlowSettings $flow,
+    array $snapshot
+): void {
+    $selection = checkout_selection_from_snapshot($snapshot);
+    if ($selection === null) {
+        return;
+    }
+    experiment_save_checkout_selection(
+        $campaign->campaignId,
+        $flow->name,
+        $selection,
+        $campaign->saveUserFlow
+    );
 }
 
 function render_black_action(

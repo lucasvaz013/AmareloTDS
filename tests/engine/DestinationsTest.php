@@ -143,6 +143,142 @@ final class DestinationsTest extends TestCase
         self::assertStringContainsString('at most 20', (string)normalize_flow_input($input, ['black' => ['flows' => []]]));
     }
 
+    public function testValidationNormalizesCheckoutRoutesAgainstCatalog(): void
+    {
+        require_once __DIR__ . '/../../code/campaignmutation.php';
+        $input = $this->flowWithCheckoutRoutes([
+            [
+                'network_id' => 'cp',
+                'weight' => 1,
+                'links' => [
+                    ['n' => 1, 'destination_id' => 'cp-1'],
+                    ['n' => 2, 'destination_id' => 'cp-2'],
+                ],
+            ],
+            [
+                'network_id' => 'bg',
+                'weight' => 1,
+                'links' => [
+                    ['n' => 1, 'destination_id' => 'bg-1'],
+                    ['n' => 2, 'destination_id' => 'bg-2'],
+                ],
+            ],
+        ]);
+
+        self::assertNull(normalize_flow_input(
+            $input,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+        self::assertSame([50, 50], array_column(
+            $input['black']['flows'][0]['steps'][0]['checkout_routes'],
+            'weight'
+        ));
+    }
+
+    public function testValidationRejectsCheckoutDestinationFromAnotherNetwork(): void
+    {
+        require_once __DIR__ . '/../../code/campaignmutation.php';
+        $input = $this->flowWithCheckoutRoutes([[
+            'network_id' => 'cp',
+            'links' => [['n' => 1, 'destination_id' => 'bg-1']],
+        ]]);
+
+        self::assertStringContainsString('does not belong', (string)normalize_flow_input(
+            $input,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+    }
+
+    public function testValidationRejectsCheckoutRoutesWithDifferentSlots(): void
+    {
+        require_once __DIR__ . '/../../code/campaignmutation.php';
+        $input = $this->flowWithCheckoutRoutes([
+            ['network_id' => 'cp', 'links' => [['n' => 1, 'destination_id' => 'cp-1']]],
+            ['network_id' => 'bg', 'links' => [['n' => 2, 'destination_id' => 'bg-2']]],
+        ]);
+
+        self::assertStringContainsString('same slots', (string)normalize_flow_input(
+            $input,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+    }
+
+    public function testValidationRejectsMoreThanOneCheckoutStepPerFlow(): void
+    {
+        require_once __DIR__ . '/../../code/campaignmutation.php';
+        $step = $this->flowWithCheckoutRoutes([[
+            'network_id' => 'cp',
+            'links' => [['n' => 1, 'destination_id' => 'cp-1']],
+        ]])['black']['flows'][0]['steps'][0];
+        $input = ['black' => ['flows' => [[
+            'name' => 'Flow',
+            'steps' => [$step, $step],
+        ]]]];
+
+        self::assertStringContainsString('one Step', (string)normalize_flow_input(
+            $input,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+    }
+
+    public function testValidationRejectsUnknownCheckoutNetworkAndDestination(): void
+    {
+        require_once __DIR__ . '/../../code/campaignmutation.php';
+        $unknownNetwork = $this->flowWithCheckoutRoutes([[
+            'network_id' => 'missing',
+            'links' => [['n' => 1, 'destination_id' => 'cp-1']],
+        ]]);
+        $unknownDestination = $this->flowWithCheckoutRoutes([[
+            'network_id' => 'cp',
+            'links' => [['n' => 1, 'destination_id' => 'ghost']],
+        ]]);
+
+        self::assertStringContainsString('existing Network', (string)normalize_flow_input(
+            $unknownNetwork,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+        self::assertStringContainsString('existing Destination', (string)normalize_flow_input(
+            $unknownDestination,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+    }
+
+    public function testValidationRejectsCheckoutRoutesOnRedirectStep(): void
+    {
+        require_once __DIR__ . '/../../code/campaignmutation.php';
+        $input = ['black' => ['flows' => [[
+            'name' => 'Flow',
+            'steps' => [[
+                'action' => 'redirect',
+                'folders' => [],
+                'redirect' => ['urls' => [['url' => 'https://example.com']], 'type' => 302],
+                'checkout_routes' => [[
+                    'network_id' => 'cp',
+                    'links' => [['n' => 1, 'destination_id' => 'cp-1']],
+                ]],
+            ]],
+        ]]]];
+
+        self::assertStringContainsString('folder Steps', (string)normalize_flow_input(
+            $input,
+            ['black' => ['flows' => []]],
+            $this->networks(),
+            $this->destinations()
+        ));
+    }
+
     /**
      * @param array<int, array<string, mixed>> $links
      * @return array<string, mixed>
@@ -163,5 +299,33 @@ final class DestinationsTest extends TestCase
                 'redirect' => ['urls' => [], 'type' => 302],
             ]],
         ]]]];
+    }
+
+    /** @param array<int, array<string, mixed>> $routes */
+    private function flowWithCheckoutRoutes(array $routes): array
+    {
+        $input = $this->flowWithFolderLinks([]);
+        $input['black']['flows'][0]['steps'][0]['checkout_routes'] = $routes;
+        return $input;
+    }
+
+    /** @return array<int, array<string, string>> */
+    private function networks(): array
+    {
+        return [
+            ['id' => 'cp', 'name' => 'Cartpanda', 'params' => 'cid={clickid}'],
+            ['id' => 'bg', 'name' => 'BuyGoods', 'params' => 'subid={clickid}'],
+        ];
+    }
+
+    /** @return array<int, array<string, string>> */
+    private function destinations(): array
+    {
+        return [
+            ['id' => 'cp-1', 'name' => 'CP 1', 'base_url' => 'https://cp.test/1', 'network_id' => 'cp'],
+            ['id' => 'cp-2', 'name' => 'CP 2', 'base_url' => 'https://cp.test/2', 'network_id' => 'cp'],
+            ['id' => 'bg-1', 'name' => 'BG 1', 'base_url' => 'https://bg.test/1', 'network_id' => 'bg'],
+            ['id' => 'bg-2', 'name' => 'BG 2', 'base_url' => 'https://bg.test/2', 'network_id' => 'bg'],
+        ];
     }
 }

@@ -27,9 +27,35 @@ The **effective URL** shown in the preview row is the base URL joined to the net
 
 If the selected network has since been deleted or its id no longer matches any registered network, the destination falls back to the base URL alone and the preview label reads **"network missing — base only"**. The destination can still be saved in this state.
 
-Destinations are persisted to `common.settings.destinations`. The installation accepts up to 200 destinations.
+Destinations are persisted to `common.settings.destinations`. The installation accepts up to 200 destinations. The list and editor derive the readable network name from `network_id`; no duplicate label is stored on the destination.
 
-## Per-step Destinations Panel
+## Checkout Routes on a Step
+
+A folder step can define `checkout_routes`, an independent weighted experiment that selects which Network and destinations resolve its `{link:N}` slots. Every route contains one `network_id`, a weight, and up to 20 mappings to `destination_id` values. All routes in the step must expose the same explicit `N` slots, and every destination must belong to that route's Network. A flow may contain Checkout Routes on at most one step.
+
+The route roll is separate from landing equal/weighted/Thompson distribution. A single route is always 100%; with multiple routes, their configured weights are used. The selection is sticky for the click/session.
+
+At the first pageview, the selected route is composed from the live Network parameters and Destination base URLs, then URL macros are resolved. The resulting Network id/name and link URLs are frozen in reserved click params (`_ytds_network_id`, `_ytds_network_name`, `_ytds_checkout`). Refreshes, subsequent steps, and Direct Load use that snapshot, so later library edits cannot change an in-flight click. Network or Destination deletion is blocked while a campaign Checkout Route references it.
+
+Deletion is blocked on every write door: CLI/Admin API (`RESOURCE_IN_USE`) and the Networks/Destinations panel pages, which replace the whole catalog.
+
+When Checkout Routes are active, they are the source of truth and the legacy per-folder Destinations editor is read-only. If `checkout_routes` is empty, the legacy behavior below remains fully supported.
+
+### Checkout Route JSON shape
+
+```json
+"checkout_routes": [
+  {
+    "network_id": "network-id",
+    "weight": 60,
+    "links": [
+      { "n": 1, "destination_id": "destination-id" }
+    ]
+  }
+]
+```
+
+## Legacy Per-folder Destinations Panel
 
 In the campaign flow editor, every landing folder inside a step has a **Destinations** panel. Each row maps a `{link:N}` placeholder to a URL. Place `{link:N}` anywhere in the landing HTML — for example `href="{link:1}"` — and the system replaces the token at serve time with the configured URL.
 
@@ -44,7 +70,7 @@ In the campaign flow editor, every landing folder inside a step has a **Destinat
 
 Every URL field includes a **library** dropdown populated from the Destinations library. Selecting an entry copies its **effective URL** into the field at that moment. The step stores only the resulting string — a plain URL. If the global destination is later edited or deleted, the saved campaign is not affected.
 
-### JSON shape
+### Legacy JSON shape
 
 Inside `campaigns.settings`, the destinations for a folder are stored under `links`:
 
@@ -67,8 +93,8 @@ When a landing is served, `{link:N}` tokens in the HTML are resolved after MVT s
 
 For each `{link:N}` token found in the HTML:
 
-1. The system looks up `N` in the folder's `links` array for the assigned landing variant.
-2. The stored URL is passed through the URL macro processor, which substitutes macros such as `{clickid}` and `{c.utm_source}` in query parameter values.
+1. If the click has a frozen Checkout Route snapshot for this step, the system looks up `N` there. Otherwise it looks up `N` in the assigned folder's legacy `links` array.
+2. Frozen Checkout Route URLs are served as stored — they are not recomposed and do not run through URL macros again. Legacy `folders[].links` URLs still pass through the URL macro processor, which substitutes macros such as `{clickid}` and `{c.utm_source}` in query parameter values.
 3. If no row matches `N`, the token is replaced with `#` and the event is logged. The literal `{link:N}` string is never exposed to the visitor.
 
 ### Macro substitution in destination URLs

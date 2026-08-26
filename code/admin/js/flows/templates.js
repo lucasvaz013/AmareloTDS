@@ -1,5 +1,6 @@
 import { renderMvtPanel } from './mvt.js';
 import { renderLinksPanel } from './links.js';
+import { renderCheckoutRoutesPanel } from './checkout-routes.js';
 
 // ── Clone a <template> by id, return DocumentFragment ──
 export function cloneTemplate(id) {
@@ -129,6 +130,8 @@ export function buildStepSection(fi, si, flowName) {
     // Set the title text (fillPlaceholders only handles attributes + single text nodes)
     var title = frag.querySelector('.flow-section-title');
     if (title) title.innerHTML = flowName + ' &rsaquo; Step ' + stepNum;
+    var checkoutRoutesPanel = frag.querySelector('.flow-checkout-routes-panel');
+    if (checkoutRoutesPanel) renderCheckoutRoutesPanel(checkoutRoutesPanel, []);
     return frag;
 }
 

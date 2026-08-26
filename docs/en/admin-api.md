@@ -28,7 +28,7 @@ Parameters travel in the query string in both cases. Two actions also read a `PO
 - Success: HTTP `200` and the result object — the same JSON the CLI prints.
 - Error: the failing HTTP status and `{ "code": "...", "message": "...", "hint": "..." }`.
 
-Codes match the CLI: `INVALID_ARG`/`UNKNOWN_ACTION`/`VALIDATION` (400), `AUTH_INVALID`/`API_DISABLED` (401/404), `CAMPAIGN_NOT_FOUND`/`SECTION_NOT_FOUND`/`NETWORK_NOT_FOUND`/`DESTINATION_NOT_FOUND`/`LANDING_NOT_FOUND` (404), `DOMAIN_CONFLICT` (409), `METHOD_NOT_ALLOWED` (405), `WRITE_FAILED`/`INTERNAL` (500).
+Codes match the CLI: `INVALID_ARG`/`UNKNOWN_ACTION`/`VALIDATION` (400), `AUTH_INVALID`/`API_DISABLED` (401/404), `CAMPAIGN_NOT_FOUND`/`SECTION_NOT_FOUND`/`NETWORK_NOT_FOUND`/`DESTINATION_NOT_FOUND`/`LANDING_NOT_FOUND` (404), `DOMAIN_CONFLICT`/`RESOURCE_IN_USE` (409), `METHOD_NOT_ALLOWED` (405), `WRITE_FAILED`/`INTERNAL` (500).
 
 Campaign settings are returned with secrets masked (`apikey`, CAPI access token, postback keys become `<redacted>`). Operational data such as clicks and destinations is returned in full to the authenticated caller.
 
@@ -44,7 +44,7 @@ Selected with the `action` query parameter.
 | `campaigns.list` | — | narrow campaign list |
 | `campaign.get` | `id`, optional `section`, `full` | one campaign (narrow, section subtree, or full redacted settings) |
 | `stats` | `campaign`, optional `from`, `to`, `columns`, `groupby` | aggregate metrics for the window |
-| `clicks` | `campaign` (except `view=trafficback`), optional `view`, `from`, `to`, `limit`, `page`, `sort`, `dir`, `filter[]` (`field:op:value`), `filter-cond`, `param[]`, `search`, `full` | recent clicks, filtered/sorted/paginated |
+| `clicks` | `campaign` (except `view=trafficback`), optional `view`, `from`, `to`, `limit`, `page`, `sort`, `dir`, `filter[]` (`field:op:value`), `filter-cond`, `param[]`, `search`, `full` | recent clicks, including frozen Checkout Route Network fields, filtered/sorted/paginated |
 | `landing.list` | — | landing folders |
 | `networks.list` | — | global Networks library |
 | `destinations.list` | — | global destinations with resolved effective URLs |
@@ -70,6 +70,8 @@ Every mutation is a dry run unless `commit=1` is passed. A dry run validates and
 | `landing.delete` | `name`, `commit` | delete a landing folder (dry run lists referencing campaigns) |
 
 Mutations run through the same `CampaignService` and validators as the panel save, so the API, the CLI, and the panel share one write path. Domain overlap is checked in dry run and commit alike and refused with `DOMAIN_CONFLICT`. `campaign.create` uses a template with the author's dangerous defaults removed and refuses any template that still references them.
+
+Network and Destination deletion is checked in dry run and commit. A Checkout Route reference returns HTTP 409 with `RESOURCE_IN_USE`; its hint identifies the campaign, flow, and step that must be edited first. The Networks/Destinations panel pages apply the same check when a catalog save would drop those ids.
 
 ## Example
 

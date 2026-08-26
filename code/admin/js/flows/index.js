@@ -18,6 +18,11 @@ import {
 import { initializeFlowReordering } from './reordering.js?v=16072602';
 import { initializeMvtPanels, handleMvtClick, handleMvtChange } from './mvt.js';
 import { initializeLinksPanels, handleLinksClick } from './links.js';
+import {
+    initializeCheckoutRoutesPanels,
+    handleCheckoutRoutesClick,
+    handleCheckoutRoutesChange
+} from './checkout-routes.js';
 
 // ── Window exports for backward compat with inline scripts ──
 window.collectFlowsData = collectFlowsData;
@@ -44,6 +49,7 @@ var changeSelectors = [
 document.addEventListener('click', function (e) {
     if (handleMvtClick(e)) return;
     if (handleLinksClick(e)) return;
+    if (handleCheckoutRoutesClick(e)) return;
     for (var i = 0; i < clickSelectors.length; i++) {
         if (e.target.closest(clickSelectors[i].sel)) {
             clickSelectors[i].fn(e);
@@ -55,6 +61,7 @@ document.addEventListener('click', function (e) {
 // ── Single delegated change listener ──
 document.addEventListener('change', function (e) {
     if (handleMvtChange(e)) return;
+    if (handleCheckoutRoutesChange(e)) return;
     for (var i = 0; i < changeSelectors.length; i++) {
         if (e.target.matches(changeSelectors[i].sel)) {
             changeSelectors[i].fn(e);
@@ -75,6 +82,7 @@ initFlowCounter();
 initializeFlowReordering();
 initializeMvtPanels();
 initializeLinksPanels();
+initializeCheckoutRoutesPanels();
 
 // ── Add Flow button ──
 var addFlowBtn = document.getElementById('add-flow-btn');

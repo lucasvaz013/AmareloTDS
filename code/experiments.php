@@ -3,6 +3,7 @@
 require_once __DIR__ . '/campaign.php';
 require_once __DIR__ . '/cookies.php';
 require_once __DIR__ . '/logging.php';
+require_once __DIR__ . '/checkoutroutes.php';
 
 const EXPERIMENT_SESSION_KEY = 'experiment_paths';
 
@@ -102,6 +103,53 @@ function experiment_save_flow_path(
     }
     $stickyState = experiment_sticky_state();
     $stickyState[$campaignKey][$flowName]['path'] = array_values($path);
+    experiment_write_sticky_state($stickyState);
+}
+
+function experiment_get_checkout_selection(
+    array $state,
+    int $campaignId,
+    string $flowName,
+    StepSettings $step
+): ?array {
+    $selection = $state[(string)$campaignId][$flowName]['checkout'] ?? null;
+    return is_array($selection) && checkout_selection_is_valid($selection, $step)
+        ? $selection
+        : null;
+}
+
+function experiment_session_checkout_selection(
+    int $campaignId,
+    string $flowName,
+    StepSettings $step
+): ?array {
+    return experiment_get_checkout_selection(experiment_session_state(), $campaignId, $flowName, $step);
+}
+
+function experiment_sticky_checkout_selection(
+    int $campaignId,
+    string $flowName,
+    StepSettings $step
+): ?array {
+    return experiment_get_checkout_selection(experiment_sticky_state(), $campaignId, $flowName, $step);
+}
+
+function experiment_save_checkout_selection(
+    int $campaignId,
+    string $flowName,
+    array $selection,
+    bool $sticky
+): void {
+    $campaignKey = (string)$campaignId;
+    $sessionState = experiment_session_state();
+    $sessionState[$campaignKey][$flowName]['checkout'] = $selection;
+    experiment_write_session_state($sessionState);
+
+    if (!$sticky) {
+        return;
+    }
+    $stickyState = experiment_sticky_state();
+    $stickyState[$campaignKey][$flowName]['checkout'] = $selection;
     experiment_write_sticky_state($stickyState);
 }
 

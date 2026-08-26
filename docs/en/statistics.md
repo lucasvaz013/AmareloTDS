@@ -12,6 +12,10 @@ Campaign statistics let you:
 - configure MVT grouping
 - export tables to XLSX
 
+## Network Dimension
+
+**Network** is a native click column, filter/sort field, and statistics **Group By** dimension for Checkout Routes. Reports group by the frozen Network id and display the frozen name captured on the first pageview, so renaming a library entry does not rewrite history. Clicks created before Checkout Routes have no frozen Network and appear as **Unknown**. CLI/API filters use the Network id.
+
 ![Statistics table example](../assets/screenshots/statistics-table-overview.png)
 
 ![Statistics table editor modal](../assets/screenshots/statistics-table-editor-modal.png)

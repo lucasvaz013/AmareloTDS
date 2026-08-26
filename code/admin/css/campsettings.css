@@ -2128,3 +2128,71 @@
 .flow-links-add {
     margin: 10px 12px 12px;
 }
+
+.flow-checkout-routes-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.flow-checkout-routes-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.flow-checkout-routes-heading small,
+.flow-links-source-message {
+    color: #94a3b8;
+}
+
+.flow-checkout-routes-list {
+    display: grid;
+    gap: 10px;
+}
+
+.flow-checkout-route {
+    padding: 12px;
+    border: 1px solid #2a3a55;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .45);
+}
+
+.flow-checkout-route-header,
+.flow-checkout-slot-row,
+.flow-checkout-routes-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.flow-checkout-route-network,
+.flow-checkout-route-destination {
+    flex: 1 1 auto;
+}
+
+.flow-checkout-route-weight {
+    flex: 0 0 78px;
+    max-width: 78px;
+}
+
+.flow-checkout-route-slots {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.flow-checkout-slot-badge {
+    flex: 0 0 84px;
+    color: #8fb8ff;
+    text-align: center;
+}
+
+.flow-links-readonly {
+    opacity: .65;
+}
+
+.flow-links-source-message {
+    display: block;
+    padding: 0 12px 8px;
+}

@@ -270,7 +270,7 @@ final class YtdsCliContractTest extends TestCase
             $this->runCli(['clicks', '--campaign', '1', '--from', self::SEED_DATE, '--to', self::SEED_DATE, '--limit', '10', '--db', $this->dbPath])
         );
         $this->assertSame(2, $payload['count']);
-        $this->assertSame(['time', 'clickid', 'country', 'device', 'status', 'payout'], array_keys($payload['clicks'][0]));
+        $this->assertSame(['time', 'clickid', 'country', 'device', 'network_id', 'network', 'status', 'payout'], array_keys($payload['clicks'][0]));
     }
 
     public function testClicksTrafficbackNeedsNoCampaign(): void
@@ -393,6 +393,41 @@ final class YtdsCliContractTest extends TestCase
         @unlink($file);
     }
 
+    public function testPatchCheckoutRoutesUsesSharedValidationInDryRunAndCommit(): void
+    {
+        $this->db->set_common_settings([
+            'networks' => [['id' => 'n1', 'name' => 'Network 1', 'params' => 'cid={clickid}']],
+            'destinations' => [['id' => 'd1', 'name' => 'Checkout 1', 'base_url' => 'https://checkout.example.com', 'network_id' => 'n1']],
+        ]);
+        $file = sys_get_temp_dir() . '/yctl_checkout_routes_' . uniqid() . '.json';
+        file_put_contents($file, json_encode([
+            'black' => ['flows' => [[
+                'name' => 'Flow 1',
+                'filters' => [],
+                'steps' => [[
+                    'action' => 'folder',
+                    'folders' => [],
+                    'checkout_routes' => [[
+                        'network_id' => 'n1',
+                        'weight' => 7,
+                        'links' => [['n' => 1, 'destination_id' => 'd1']],
+                    ]],
+                ]],
+            ]]],
+        ]));
+
+        $dry = $this->assertCleanJson($this->runCli(['campaign', 'patch', '1', '--apply', $file, '--db', $this->dbPath]));
+        $this->assertTrue($dry['dry_run']);
+        $this->assertContains('black', $dry['changed']);
+
+        $this->runCli(['campaign', 'patch', '1', '--apply', $file, '--yes', '--db', $this->dbPath]);
+        $section = $this->assertCleanJson($this->runCli(['campaign', 'get', '1', '--section', 'black.flows.0.steps.0.checkout_routes', '--db', $this->dbPath]));
+        $this->assertSame(100, $section['value'][0]['weight']);
+        $this->assertSame('n1', $section['value'][0]['network_id']);
+        $this->assertSame([['n' => 1, 'destination_id' => 'd1']], $section['value'][0]['links']);
+        @unlink($file);
+    }
+
     public function testPatchRequiresApply(): void
     {
         $this->assertErrorContract($this->runCli(['campaign', 'patch', '1', '--db', $this->dbPath]), 2, 'INVALID_ARG');
@@ -491,6 +526,31 @@ final class YtdsCliContractTest extends TestCase
     public function testDestinationDeleteUnknownIsExit3(): void
     {
         $this->assertErrorContract($this->runCli(['destinations', 'delete', 'ghost', '--db', $this->dbPath]), 3, 'DESTINATION_NOT_FOUND');
+    }
+
+    public function testNetworkDeleteInUseIsExit2WithStableCode(): void
+    {
+        $this->db->set_common_settings([
+            'networks' => [['id' => 'n1', 'name' => 'N', 'params' => '']],
+            'destinations' => [['id' => 'd1', 'name' => 'D', 'base_url' => 'https://example.com', 'network_id' => 'n1']],
+        ]);
+        $this->db->seedCampaign(9, 'Routed', [
+            'black' => [
+                'flows' => [[
+                    'name' => 'F1',
+                    'steps' => [[
+                        'checkout_routes' => [[
+                            'network_id' => 'n1',
+                            'links' => [['n' => 1, 'destination_id' => 'd1']],
+                        ]],
+                    ]],
+                ]],
+            ],
+        ]);
+
+        $run = $this->runCli(['networks', 'delete', 'n1', '--db', $this->dbPath]);
+        $this->assertErrorContract($run, 2, 'RESOURCE_IN_USE');
+        $this->assertStringContainsString('Routed: F1 — step 1', $run['stderr']);
     }
 
     public function testLandingUploadRequiresZip(): void

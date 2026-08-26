@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/campaign.php'; // MvtSettings::valueCode() used by normalize_mvt_input
+require_once __DIR__ . '/destinations.php';
 
 /**
  * Pure campaign-settings normalizers + recursive merge, shared by the panel save path
@@ -56,7 +57,12 @@ function normalize_item_weights(array &$items): void {
     unset($item);
 }
 
-function normalize_flow_input(array &$input, array $current): ?string
+function normalize_flow_input(
+    array &$input,
+    array $current,
+    array $rawNetworks = [],
+    array $rawDestinations = []
+): ?string
 {
     if (!array_key_exists('black', $input)) {
         return null;
@@ -74,6 +80,17 @@ function normalize_flow_input(array &$input, array $current): ?string
     $currentFlows = is_array($current['black']['flows'] ?? null)
         ? $current['black']['flows']
         : [];
+    $networksById = DestinationLibrary::indexNetworks($rawNetworks);
+    $destinationsById = [];
+    foreach ($rawDestinations as $rawDestination) {
+        if (!is_array($rawDestination)) {
+            continue;
+        }
+        $destination = Destination::fromArray($rawDestination);
+        if ($destination->id !== '') {
+            $destinationsById[$destination->id] = $destination;
+        }
+    }
 
     foreach ($flows as $flowIndex => &$flow) {
         if (!is_array($flow)) {
@@ -83,6 +100,7 @@ function normalize_flow_input(array &$input, array $current): ?string
         if (!is_array($steps) || !array_is_list($steps)) {
             return 'Flow #' . ($flowIndex + 1) . ' steps must be a list.';
         }
+        $checkoutStepCount = 0;
         foreach ($steps as $stepIndex => &$step) {
             if (!is_array($step)) {
                 return 'Step #' . ($stepIndex + 1) . ' must be an object.';
@@ -92,6 +110,23 @@ function normalize_flow_input(array &$input, array $current): ?string
                 return 'Invalid action in Step #' . ($stepIndex + 1) . '.';
             }
             $step['action'] = $action;
+
+            $checkoutError = normalize_checkout_routes_input(
+                $step['checkout_routes'],
+                $flowIndex,
+                $stepIndex,
+                $networksById,
+                $destinationsById
+            );
+            if ($checkoutError !== null) {
+                return $checkoutError;
+            }
+            if ($step['checkout_routes'] !== []) {
+                $checkoutStepCount++;
+                if ($action !== 'folder') {
+                    return 'Checkout Routes are only supported on folder Steps.';
+                }
+            }
 
             if ($action === 'folder') {
                 $folders = &$step['folders'];
@@ -183,8 +218,95 @@ function normalize_flow_input(array &$input, array $current): ?string
             }
         }
         unset($step);
+        if ($checkoutStepCount > 1) {
+            return 'Flow #' . ($flowIndex + 1) . ' may configure Checkout Routes on only one Step.';
+        }
     }
     unset($flow);
+    return null;
+}
+
+/**
+ * @param mixed $routes rewritten to a canonical Checkout Routes list
+ * @param array<string, Network> $networksById
+ * @param array<string, Destination> $destinationsById
+ */
+function normalize_checkout_routes_input(
+    &$routes,
+    int $flowIndex,
+    int $stepIndex,
+    array $networksById,
+    array $destinationsById
+): ?string {
+    if ($routes === null) {
+        $routes = [];
+        return null;
+    }
+    if (!is_array($routes) || !array_is_list($routes)) {
+        return 'Checkout Routes in Flow #' . ($flowIndex + 1) . ', Step #' . ($stepIndex + 1) . ' must be a list.';
+    }
+    if ($routes === []) {
+        return null;
+    }
+
+    $expectedSlots = null;
+    foreach ($routes as $routeIndex => &$route) {
+        $position = 'Flow #' . ($flowIndex + 1) . ', Step #' . ($stepIndex + 1) . ', Route #' . ($routeIndex + 1);
+        if (!is_array($route)) {
+            return $position . ' must be an object.';
+        }
+        $networkId = trim((string)($route['network_id'] ?? ''));
+        if ($networkId === '' || !isset($networksById[$networkId])) {
+            return $position . ' must reference an existing Network.';
+        }
+        $links = $route['links'] ?? null;
+        if (!is_array($links) || !array_is_list($links) || $links === []) {
+            return $position . ' must contain at least one destination slot.';
+        }
+        if (count($links) > 20) {
+            return $position . ' may contain at most 20 destination slots.';
+        }
+
+        $seenSlots = [];
+        $cleanLinks = [];
+        foreach ($links as $linkIndex => $link) {
+            if (!is_array($link)) {
+                return $position . ', Slot #' . ($linkIndex + 1) . ' must be an object.';
+            }
+            $n = (int)($link['n'] ?? 0);
+            if ($n < 1) {
+                return $position . ' slot numbers must be >= 1.';
+            }
+            if (isset($seenSlots[$n])) {
+                return $position . " cannot use slot {$n} twice.";
+            }
+            $seenSlots[$n] = true;
+            $destinationId = trim((string)($link['destination_id'] ?? ''));
+            $destination = $destinationsById[$destinationId] ?? null;
+            if (!$destination instanceof Destination) {
+                return $position . ", slot {$n} must reference an existing Destination.";
+            }
+            if ($destination->networkId !== $networkId) {
+                return $position . ", slot {$n} Destination does not belong to the selected Network.";
+            }
+            $cleanLinks[] = ['n' => $n, 'destination_id' => $destinationId];
+        }
+
+        $slots = array_keys($seenSlots);
+        sort($slots, SORT_NUMERIC);
+        if ($expectedSlots === null) {
+            $expectedSlots = $slots;
+        } elseif ($slots !== $expectedSlots) {
+            return 'All Checkout Routes in Flow #' . ($flowIndex + 1) . ', Step #' . ($stepIndex + 1) . ' must use the same slots.';
+        }
+        $route = [
+            'network_id' => $networkId,
+            'weight' => max(0, (int)($route['weight'] ?? 0)),
+            'links' => $cleanLinks,
+        ];
+    }
+    unset($route);
+    normalize_item_weights($routes);
     return null;
 }
 

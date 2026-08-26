@@ -99,6 +99,64 @@ final class CampeditorHandlerTest extends TestCase
         $this->assertStringContainsString('>= 1', $res['message']);
     }
 
+    public function testSavePersistsNormalizedCheckoutRoutesThroughPanelPath(): void
+    {
+        $this->db->set_common_settings([
+            'networks' => [['id' => 'n1', 'name' => 'Network 1', 'params' => 'cid={clickid}']],
+            'destinations' => [['id' => 'd1', 'name' => 'Checkout 1', 'base_url' => 'https://checkout.example.com', 'network_id' => 'n1']],
+        ]);
+        $body = json_encode([
+            'black' => ['flows' => [[
+                'name' => 'Flow 1',
+                'filters' => [],
+                'steps' => [[
+                    'action' => 'folder',
+                    'folders' => [['name' => 'lp']],
+                    'checkout_routes' => [[
+                        'network_id' => 'n1',
+                        'weight' => 7,
+                        'links' => [['n' => 1, 'destination_id' => 'd1']],
+                    ]],
+                ]],
+            ]]],
+        ]);
+
+        $res = campeditor_handle($this->db, 'save', '', 1, $body);
+        $this->assertTrue($res['ok'], $res['message']);
+        $raw = $this->db->get_campaign_settings(1);
+        $route = $raw['black']['flows'][0]['steps'][0]['checkout_routes'][0];
+        $this->assertSame(100, $route['weight']);
+        $this->assertSame('n1', $route['network_id']);
+        $this->assertSame([['n' => 1, 'destination_id' => 'd1']], $route['links']);
+        $this->assertSame('REALKEY', $raw['apikey']);
+    }
+
+    public function testSaveRejectsUnknownCheckoutDestinationThroughPanelPath(): void
+    {
+        $this->db->set_common_settings([
+            'networks' => [['id' => 'n1', 'name' => 'Network 1', 'params' => '']],
+            'destinations' => [],
+        ]);
+        $body = json_encode([
+            'black' => ['flows' => [[
+                'name' => 'Flow 1',
+                'filters' => [],
+                'steps' => [[
+                    'action' => 'folder',
+                    'folders' => [['name' => 'lp']],
+                    'checkout_routes' => [[
+                        'network_id' => 'n1',
+                        'links' => [['n' => 1, 'destination_id' => 'ghost']],
+                    ]],
+                ]],
+            ]]],
+        ]);
+
+        $res = campeditor_handle($this->db, 'save', '', 1, $body);
+        $this->assertFalse($res['ok']);
+        $this->assertStringContainsString('existing Destination', $res['message']);
+    }
+
     public function testSaveSurfacesDomainConflict(): void
     {
         // campaign 2 (beta) claims b.example.com; saving it onto campaign 1 must be rejected.

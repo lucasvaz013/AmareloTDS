@@ -264,7 +264,13 @@ class CampaignService
                 throw new YtdsOpError('VALIDATION', 400, $error, '');
             }
         }
-        $flowError = normalize_flow_input($input, $current);
+        $common = $this->db->get_common_settings();
+        $flowError = normalize_flow_input(
+            $input,
+            $current,
+            is_array($common['networks'] ?? null) ? $common['networks'] : [],
+            is_array($common['destinations'] ?? null) ? $common['destinations'] : []
+        );
         if ($flowError !== null) {
             throw new YtdsOpError('VALIDATION', 400, $flowError, '');
         }
@@ -449,7 +455,13 @@ class CampaignService
                 throw new YtdsOpError('VALIDATION', 400, 'template invalid: ' . $error, '');
             }
         }
-        $flowError = normalize_flow_input($settings, []);
+        $common = $this->db->get_common_settings();
+        $flowError = normalize_flow_input(
+            $settings,
+            [],
+            is_array($common['networks'] ?? null) ? $common['networks'] : [],
+            is_array($common['destinations'] ?? null) ? $common['destinations'] : []
+        );
         if ($flowError !== null) {
             throw new YtdsOpError('VALIDATION', 400, 'template invalid: ' . $flowError, '');
         }

@@ -94,6 +94,67 @@ class FlowsTest extends TestCase
         $this->assertEquals('https://a.com', $ss->getRedirectUrlByLabel('a.com'));
     }
 
+    public function testStepSettingsDefaultsCheckoutRoutesToEmptyList(): void
+    {
+        $step = StepSettings::fromArray([
+            'action' => 'folder',
+            'folders' => [$this->folder('p1')],
+        ]);
+
+        $this->assertSame([], $step->checkoutRoutes);
+        $this->assertFalse($step->hasCheckoutRoutes());
+        $this->assertSame([], $step->jsonSerialize()['checkout_routes']);
+    }
+
+    public function testStepSettingsRoundTripsCheckoutRoutes(): void
+    {
+        $step = StepSettings::fromArray([
+            'action' => 'folder',
+            'folders' => [$this->folder('p1')],
+            'checkout_routes' => [[
+                'network_id' => ' network-a ',
+                'weight' => 60,
+                'links' => [
+                    ['n' => 1, 'destination_id' => ' destination-1 '],
+                    ['n' => 2, 'destination_id' => 'destination-2'],
+                ],
+            ]],
+        ]);
+
+        $this->assertTrue($step->hasCheckoutRoutes());
+        $this->assertSame([
+            'network_id' => 'network-a',
+            'weight' => 60,
+            'links' => [
+                ['n' => 1, 'destination_id' => 'destination-1'],
+                ['n' => 2, 'destination_id' => 'destination-2'],
+            ],
+        ], $step->jsonSerialize()['checkout_routes'][0]);
+
+        $decoded = json_decode((string)json_encode($step), true, 512, JSON_THROW_ON_ERROR);
+        $roundTrip = StepSettings::fromArray($decoded);
+        $this->assertSame(
+            $step->jsonSerialize()['checkout_routes'],
+            $roundTrip->jsonSerialize()['checkout_routes']
+        );
+    }
+
+    public function testFlowSettingsDoesNotOwnCheckoutRoutes(): void
+    {
+        $flow = FlowSettings::fromArray([
+            'name' => 'Flow',
+            'checkout_routes' => [['network_id' => 'wrong-level']],
+            'steps' => [[
+                'action' => 'folder',
+                'folders' => [$this->folder('p1')],
+                'checkout_routes' => [],
+            ]],
+        ]);
+
+        $this->assertArrayNotHasKey('checkout_routes', $flow->jsonSerialize());
+        $this->assertSame([], $flow->steps[0]->checkoutRoutes);
+    }
+
     // ── Tds::pick_flow ──
 
     private function makeFlow(string $name, array $filters): FlowSettings

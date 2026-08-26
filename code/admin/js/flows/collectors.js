@@ -1,5 +1,6 @@
 import { collectMvt } from './mvt.js';
 import { collectLinks } from './links.js';
+import { collectCheckoutRoutes } from './checkout-routes.js';
 
 // ── Collect a single step's data from a step section element ──
 function collectStepData(stepSec) {
@@ -48,7 +49,8 @@ function collectStepData(stepSec) {
     return {
         action: action,
         folders: folders,
-        redirect: { urls: redirectUrls, type: redirectType }
+        redirect: { urls: redirectUrls, type: redirectType },
+        checkout_routes: action === 'folder' ? collectCheckoutRoutes(stepSec) : []
     };
 }
 

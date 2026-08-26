@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/checkoutroutes.php';
 
 require_once __DIR__ . '/requestfunc.php';
 require_once __DIR__ . '/paths.php';
@@ -216,10 +217,14 @@ function load_step(Campaign $c, FlowSettings $flow, int $stepIndex, string $fold
     }
 
     $html = apply_mvt_assignment($html, $mvtSettings, $mvtAssignment);
+    $frozenCheckoutLinks = checkout_links_from_click_params($click['params'] ?? [], $stepIndex);
+    $links = $frozenCheckoutLinks ?? ($step->getFolder($folderName)?->links ?? []);
     $html = resolve_link_macros(
         $html,
-        $step->getFolder($folderName)?->links ?? [],
-        fn(string $url): string => $mp->replace_url_macros($url)
+        $links,
+        $frozenCheckoutLinks === null
+            ? fn(string $url): string => $mp->replace_url_macros($url)
+            : static fn(string $url): string => $url
     );
     $html = $mp->replace_html_macros($html);
     $html = fix_phone_and_name($html);

@@ -478,6 +478,9 @@ class Db
             if (array_key_exists('group', $row)) {
                 $filtered['group'] = $row['group'];
             }
+            if (array_key_exists('network_id', $row)) {
+                $filtered['network_id'] = $row['network_id'];
+            }
             if ($children !== []) {
                 $filtered['_children'] = $children;
             }
@@ -685,7 +688,9 @@ class Db
         $allowedSort = ['id','time','ip','country','lang','os','osver','client','clientver','device','brand','model','isp','ua','userid','clickid','flow','path','step','status','payout','reason'];
         // Support sorting by param.* fields via json_extract
         $sortExpr = 'time';
-        if (in_array($sortField, $allowedSort)) {
+        if ($sortField === 'network') {
+            $sortExpr = "json_extract(params, '$._ytds_network_id')";
+        } elseif (in_array($sortField, $allowedSort)) {
             $sortExpr = $sortField;
         } elseif (str_starts_with($sortField, 'param.')) {
             $key = substr($sortField, 6);
@@ -721,7 +726,7 @@ class Db
         $tableFilterFields = match ($table) {
             'blocked' => ['country', 'lang', 'os', 'osver', 'brand', 'model', 'device', 'isp', 'client', 'clientver', 'reason'],
             'trafficback' => ['country', 'lang', 'os', 'osver', 'brand', 'model', 'device', 'isp', 'client', 'clientver'],
-            default => ['country', 'lang', 'os', 'osver', 'brand', 'model', 'device', 'isp', 'client', 'clientver', 'flow', 'step', 'path', 'status'],
+            default => ['country', 'lang', 'os', 'osver', 'brand', 'model', 'device', 'isp', 'client', 'clientver', 'flow', 'step', 'path', 'status', 'network'],
         };
 
         // Build filter WHERE clauses (positional ? placeholders)
@@ -796,6 +801,8 @@ class Db
         $clicks = $this->exec_bind_list_query($dataQuery, $bindList);
         foreach ($clicks as &$click) {
             self::decode_click_row($click);
+            $click['network_id'] = $click['params']['_ytds_network_id'] ?? null;
+            $click['network'] = $click['params']['_ytds_network_name'] ?? null;
             // Extract requested param columns
             foreach ($paramColumns as $key) {
                 $click["param.$key"] = $click['params'][$key] ?? null;
@@ -917,12 +924,15 @@ class Db
 
     private const FILTERABLE_FIELDS = [
         'country', 'lang', 'os', 'osver', 'brand', 'model', 'device',
-        'isp', 'client', 'clientver', 'flow', 'step', 'landing', 'path', 'status', 'reason'
+        'isp', 'client', 'clientver', 'flow', 'step', 'landing', 'path', 'status', 'reason', 'network'
     ];
 
     private const FILTER_OPERATORS = ['=', '!=', 'in', 'not_in', 'is_null', 'is_not_null'];
 
     private static function resolveFilterField(string $field): ?string {
+        if ($field === 'network') {
+            return "json_extract(params, '$._ytds_network_id')";
+        }
         if (in_array($field, self::FILTERABLE_FIELDS)) {
             return $field;
         }
@@ -1063,6 +1073,16 @@ class Db
                 $groupByParts[] = 'date';
                 $orderByParts[] = 'date';
                 $normalizedFields[] = 'date';
+                continue;
+            }
+
+            if ($field === 'network') {
+                $selectParts[] = "json_extract(params, '$._ytds_network_id') AS network";
+                $selectParts[] = "COALESCE(NULLIF(json_extract(params, '$._ytds_network_name'), ''), 'Unknown') AS network_name";
+                $groupByParts[] = 'network';
+                $orderByParts[] = 'network IS NULL';
+                $orderByParts[] = 'network';
+                $normalizedFields[] = 'network';
                 continue;
             }
 
@@ -1636,6 +1656,11 @@ class Db
             foreach ($groupFields as $field) {
                 unset($node[$field]);
             }
+            if ($currentField === 'network') {
+                $node['network_id'] = $row['network'] ?? null;
+                $groupValue = $row['network_name'] ?? 'Unknown';
+                unset($node['network_name']);
+            }
             $node['group'] = is_numeric($groupValue) ? (string)$groupValue : $groupValue;
             if ($depth < count($groupFields)) {
                 $childParentFields = array_slice($groupFields, 0, $depth);
@@ -1874,9 +1899,18 @@ class Db
         return $this->add_click($query, $click);
     }
 
-    public function add_black_click(string $userid, string $clickid, $data, array $path, string $flow, int $campId): bool
+    public function add_black_click(
+        string $userid,
+        string $clickid,
+        $data,
+        array $path,
+        string $flow,
+        int $campId,
+        array $checkoutSnapshot = []
+    ): bool
     {
         $click = $this->prepare_click_data($data, $campId);
+        $click['params'] = $this->merge_checkout_snapshot_json((string)$click['params'], $checkoutSnapshot);
         $click['userid'] = $userid;
         $click['clickid'] = $clickid;
         $click['flow'] = empty($flow) ? 'unknown' : $flow;
@@ -1899,9 +1933,11 @@ class Db
         int $campId,
         ?string $uniqueHash,
         int $uniqueFlags,
-        int $time
+        int $time,
+        array $checkoutSnapshot = []
     ): void {
         $click['time'] = $time;
+        $click['params'] = $this->merge_checkout_snapshot_json((string)($click['params'] ?? '{}'), $checkoutSnapshot);
         $pathJson = json_encode(array_values($path));
         if ($pathJson === false) {
             throw new RuntimeException('Failed to encode click path');
@@ -1940,6 +1976,27 @@ class Db
         if (@$stmt->execute() === false) {
             throw new RuntimeException('Failed to insert atomic click: ' . $db->lastErrorMsg());
         }
+    }
+
+    private function merge_checkout_snapshot_json(string $paramsJson, array $snapshot): string
+    {
+        $params = json_decode($paramsJson, true);
+        $params = is_array($params) ? $params : [];
+        foreach (array_keys($params) as $key) {
+            if (str_starts_with((string)$key, '_ytds_')) {
+                unset($params[$key]);
+            }
+        }
+        foreach (['_ytds_network_id', '_ytds_network_name', '_ytds_checkout'] as $key) {
+            if (array_key_exists($key, $snapshot)) {
+                $params[$key] = $snapshot[$key];
+            }
+        }
+        $encoded = json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            throw new RuntimeException('Failed to encode click params');
+        }
+        return $encoded;
     }
 
     public function prepare_black_click_for_transaction(array $data, int $campId): array

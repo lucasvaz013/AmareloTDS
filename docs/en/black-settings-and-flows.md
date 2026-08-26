@@ -37,6 +37,8 @@ Steps use the same handle to keep ordering consistent. A redirect is a terminal 
 
 Each step can contain folders or redirect URLs. Weight is stored with the corresponding folder or URL. A folder also stores its load type and its own MVT settings.
 
+A folder step may also own [Checkout Routes](networks-and-destinations.md): an independent weighted selection of one Network and a synchronized set of `{link:N}` destinations. The route is selected once and frozen on the click; it does not participate in landing equal/weighted/Thompson optimization. At most one step per flow may define routes.
+
 ## Landing MVT
 
 Every folder entry has an **MVT** section. The Copy button beside each Test name copies its placeholder, such as `#TEST1#`; put it into the landing HTML and add text or HTML Values to the Test. AmareloTDS selects one Value independently and uniformly for every active TEST and performs a trusted string replacement. The same placeholder may occur more than once in the HTML.
