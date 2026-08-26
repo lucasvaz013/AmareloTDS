@@ -1,5 +1,6 @@
 import { getFlowDist, redistributeWeights } from './weights.js?v=16072602';
 import { buildFolderRow } from './templates.js?v=16072603';
+import { lockLegacyLinksForStep } from './checkout-routes.js';
 
 // ── Upload ZIP: pick file, prompt folder name, upload, insert row ──
 export function handleZipUpload(btn) {
@@ -50,6 +51,7 @@ export function handleZipUpload(btn) {
                     if (showWeight) {
                         redistributeWeights(container.querySelectorAll('.flow-step-weight'));
                     }
+                    lockLegacyLinksForStep(stepSec);
                 }
             })
             .catch(function (err) { alert('Upload failed: ' + err); })

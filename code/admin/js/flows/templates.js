@@ -1,6 +1,6 @@
 import { renderMvtPanel } from './mvt.js';
 import { renderLinksPanel } from './links.js';
-import { renderCheckoutRoutesPanel } from './checkout-routes.js';
+import { renderCheckoutRoutesPanel, lockLegacyLinksForStep } from './checkout-routes.js';
 
 // ── Clone a <template> by id, return DocumentFragment ──
 export function cloneTemplate(id) {
@@ -132,6 +132,8 @@ export function buildStepSection(fi, si, flowName) {
     if (title) title.innerHTML = flowName + ' &rsaquo; Step ' + stepNum;
     var checkoutRoutesPanel = frag.querySelector('.flow-checkout-routes-panel');
     if (checkoutRoutesPanel) renderCheckoutRoutesPanel(checkoutRoutesPanel, []);
+    var newStep = frag.querySelector('.step-section');
+    if (newStep) lockLegacyLinksForStep(newStep);
     return frag;
 }
 

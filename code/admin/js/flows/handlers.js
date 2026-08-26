@@ -3,6 +3,7 @@ import { buildFolderRow, buildRedirectRow, buildFlowSection, buildStepSection, b
 import { openFolderPicker } from './folder-picker.js?v=16072603';
 import { handleZipUpload } from './zip-upload.js?v=16072602';
 import { initializeStepSortable } from './reordering.js?v=16072602';
+import { lockLegacyLinksForStep } from './checkout-routes.js';
 
 // ── State ──
 var flowCounter = 0;
@@ -91,6 +92,7 @@ export function handleStepAddExisting(e) {
             if (showWeight) {
                 redistributeWeights(container.querySelectorAll('.flow-step-weight'));
             }
+            lockLegacyLinksForStep(stepSec);
             updateStepListInfo(fi, stepSec.dataset.stepIndex);
         });
     }).catch(function (err) { btn.disabled = false; alert('Error: ' + err); });

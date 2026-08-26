@@ -124,7 +124,13 @@ function redistributeWeights(panel) {
 function updateLegacyLinksState(panel) {
     var step = panel.closest('.step-section');
     if (!step) return;
-    var active = panel.querySelectorAll('.flow-checkout-route').length > 0;
+    lockLegacyLinksForStep(step);
+}
+
+export function lockLegacyLinksForStep(step) {
+    if (!step) return;
+    var panel = step.querySelector('.flow-checkout-routes-panel');
+    var active = !!(panel && panel.querySelectorAll('.flow-checkout-route').length > 0);
     step.querySelectorAll('.flow-links-panel').forEach(function (legacy) {
         legacy.classList.toggle('flow-links-readonly', active);
         legacy.querySelectorAll('input, select, button').forEach(function (control) {

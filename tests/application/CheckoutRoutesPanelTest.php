@@ -53,6 +53,19 @@ final class CheckoutRoutesPanelTest extends TestCase
         $this->assertStringContainsString('handleCheckoutRoutesChange', $index);
     }
 
+    public function testNewlyAddedFoldersInheritTheLegacyDestinationLock(): void
+    {
+        $script = file_get_contents(__DIR__ . '/../../code/admin/js/flows/checkout-routes.js');
+        $handlers = file_get_contents(__DIR__ . '/../../code/admin/js/flows/handlers.js');
+        $zip = file_get_contents(__DIR__ . '/../../code/admin/js/flows/zip-upload.js');
+        $templates = file_get_contents(__DIR__ . '/../../code/admin/js/flows/templates.js');
+
+        $this->assertStringContainsString('export function lockLegacyLinksForStep', $script);
+        $this->assertStringContainsString('lockLegacyLinksForStep(stepSec)', $handlers);
+        $this->assertStringContainsString('lockLegacyLinksForStep(stepSec)', $zip);
+        $this->assertStringContainsString('lockLegacyLinksForStep', $templates);
+    }
+
     public function testDestinationPageDerivesReadableNetworkNameWithoutPersistingLabel(): void
     {
         $page = file_get_contents(__DIR__ . '/../../code/admin/destinations.php');
