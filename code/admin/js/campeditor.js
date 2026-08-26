@@ -38,9 +38,23 @@ function closeCampMenu() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    // The campaign action menu is shared through scripts.php, but only campaign
-    // pages provide its trigger and styles. Do not inject the template elsewhere.
-    if (!document.querySelector('#campaigns, #renameCampaign')) return;
+    document.querySelector('#renameCampaign')?.addEventListener('click', async function() {
+        const campaignId = this.dataset.campaignId;
+        const currentName = this.dataset.campaignName ?? '';
+        const newName = prompt('Enter new campaign name:', currentName);
+        if (newName == null) return;
+        const trimmedName = newName.trim();
+        if (!trimmedName) {
+            alert('Campaign name can not be empty!');
+            return;
+        }
+        await campEditor('ren', campaignId, trimmedName);
+    });
+
+    // The action menu belongs to the dashboard campaign table. Campaign Settings
+    // has no table trigger and no menu CSS, so injecting it there leaves a dead
+    // grey Settings/Clone/Allowed/Blocked/Leads/Delete block in the corner.
+    if (!document.getElementById('campaigns')) return;
     campMenuDropdown = document.createElement('div');
     campMenuDropdown.className = 'camp-menu-dropdown';
     campMenuDropdown.innerHTML = `
@@ -61,19 +75,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.addEventListener('scroll', closeCampMenu, true);
-
-    document.querySelector('#renameCampaign')?.addEventListener('click', async function() {
-        const campaignId = this.dataset.campaignId;
-        const currentName = this.dataset.campaignName ?? '';
-        const newName = prompt('Enter new campaign name:', currentName);
-        if (newName == null) return;
-        const trimmedName = newName.trim();
-        if (!trimmedName) {
-            alert('Campaign name can not be empty!');
-            return;
-        }
-        await campEditor('ren', campaignId, trimmedName);
-    });
 
     campMenuDropdown.addEventListener('click', async function(e) {
         const menuItem = e.target.closest('.camp-menu-item');

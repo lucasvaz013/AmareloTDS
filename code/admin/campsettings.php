@@ -662,6 +662,7 @@ global $c, $db, $campId;
                 <a href="javascript:void(0)" class="btn btn-info campaign-action-btn flow-step-upload-zip" data-fi="<?= $fi ?>" data-si="<?= $si ?>"><i class="bi bi-upload"></i> Upload ZIP</a>
             </div>
             <div class="flow-group flow-checkout-routes-group">
+                <span class="flow-group-title">Checkout Routes</span>
                 <div class="flow-checkout-routes-panel" data-checkout-routes="<?= htmlspecialchars($checkoutRoutesJson ?: '[]', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>"></div>
             </div>
             </div>
@@ -1965,6 +1966,7 @@ global $c, $db, $campId;
             <a href="javascript:void(0)" class="btn btn-info campaign-action-btn flow-step-upload-zip" data-fi="__FI__" data-si="__SI__"><i class="bi bi-upload"></i> Upload ZIP</a>
         </div></div>
         <div class="flow-group flow-checkout-routes-group">
+            <span class="flow-group-title">Checkout Routes</span>
             <div class="flow-checkout-routes-panel" data-checkout-routes="[]"></div>
         </div>
 

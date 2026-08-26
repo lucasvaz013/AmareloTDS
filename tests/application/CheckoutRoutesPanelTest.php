@@ -16,6 +16,16 @@ final class CheckoutRoutesPanelTest extends TestCase
         $this->assertStringContainsString("'id' => \$__dest->id", $form);
     }
 
+    public function testCheckoutRoutesGroupUsesTheSameTitlePatternAsOtherFlowGroups(): void
+    {
+        $form = file_get_contents(__DIR__ . '/../../code/admin/campsettings.php');
+        $script = file_get_contents(__DIR__ . '/../../code/admin/js/flows/checkout-routes.js');
+
+        $this->assertStringContainsString('<span class="flow-group-title">Checkout Routes</span>', $form);
+        $this->assertStringNotContainsString('flow-checkout-routes-heading', $script);
+        $this->assertStringNotContainsString('<strong>Checkout Routes</strong>', $script);
+    }
+
     public function testModuleSupportsRoutesSlotsWeightsAndLegacySourceLock(): void
     {
         $script = file_get_contents(__DIR__ . '/../../code/admin/js/flows/checkout-routes.js');
@@ -53,6 +63,8 @@ final class CheckoutRoutesPanelTest extends TestCase
         $this->assertStringContainsString('nameByNetwork', $script);
         $this->assertStringNotContainsString("label:", $script);
         $this->assertStringNotContainsString("'label' =>", $page);
+        $css = file_get_contents(__DIR__ . '/../../code/admin/css/destinations.css');
+        $this->assertStringContainsString('.destination-network-name', $css);
     }
 
     public function testBlankTemplateStartsWithNoCheckoutRoutes(): void

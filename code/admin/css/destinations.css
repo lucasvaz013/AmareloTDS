@@ -96,6 +96,12 @@
     opacity: 0.6;
 }
 
+.destination-network-name {
+    flex: 0 0 auto;
+    color: #cbd5e1;
+    opacity: 0.85;
+}
+
 .destination-preview-url {
     color: #8fe0a0;
     white-space: nowrap;

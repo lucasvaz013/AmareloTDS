@@ -146,20 +146,16 @@ export function renderCheckoutRoutesPanel(panel, routes) {
     routes = Array.isArray(routes) ? routes : [];
     panel.innerHTML = '';
 
-    var heading = document.createElement('div');
-    heading.className = 'flow-checkout-routes-heading';
-    heading.innerHTML = '<strong>Checkout Routes</strong><small>Split the same {link:N} slots across checkout Networks. URLs freeze on the first pageview.</small>';
-
     var cards = document.createElement('div');
     cards.className = 'flow-checkout-routes-list';
     routes.forEach(function (route) { cards.appendChild(createRoute(route, routes.length)); });
 
     var actions = document.createElement('div');
     actions.className = 'flow-checkout-routes-actions';
-    actions.innerHTML = '<button type="button" class="btn btn-outline-info btn-sm flow-checkout-route-add">+ Route</button>'
-        + '<button type="button" class="btn btn-outline-secondary btn-sm flow-checkout-slot-add">+ Slot</button>';
+    actions.innerHTML = '<button type="button" class="btn btn-primary campaign-action-btn flow-checkout-route-add">+ Route</button>'
+        + '<button type="button" class="btn btn-info campaign-action-btn flow-checkout-slot-add">+ Slot</button>';
 
-    panel.append(heading, cards, actions);
+    panel.append(cards, actions);
     updateLegacyLinksState(panel);
 }
 
