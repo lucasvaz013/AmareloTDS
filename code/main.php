@@ -12,6 +12,7 @@ require_once __DIR__ . '/actions.php';
 require_once __DIR__ . '/conversion.php';
 require_once __DIR__ . '/experiments.php';
 require_once __DIR__ . '/checkoutroutes.php';
+require_once __DIR__ . '/js/obfuscator.php';
 
 function traficback(array $clickParams): TdsAction
 {

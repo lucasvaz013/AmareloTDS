@@ -170,7 +170,8 @@ class FiltrationCore
             'host'
         ];
         if (in_array($curParamName, $standardParams)) {
-            $paramValue = $this->click_params[$curParamName];
+            $paramKey = $curParamName === 'useragent' ? 'ua' : $curParamName;
+            $paramValue = (string)($this->click_params[$paramKey] ?? '');
             $check = $this->operator($val, $filter['operator'], $paramValue);
             if ($check) {
                 $this->matched_filters[] = $curParamName;
