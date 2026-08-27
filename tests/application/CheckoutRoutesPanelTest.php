@@ -16,6 +16,29 @@ final class CheckoutRoutesPanelTest extends TestCase
         $this->assertStringContainsString("'id' => \$__dest->id", $form);
     }
 
+    public function testInlineCheckoutCatalogsUseHtmlSafeJsonEncoding(): void
+    {
+        $form = file_get_contents(__DIR__ . '/../../code/admin/campsettings.php');
+        $catalogBlock = substr(
+            $form,
+            strpos($form, 'window.REGISTERED_DESTINATIONS'),
+            strpos($form, '<!-- CodeMirror 6 local bundles -->') - strpos($form, 'window.REGISTERED_DESTINATIONS')
+        );
+
+        $this->assertSame(3, substr_count($catalogBlock, 'JSON_HEX_TAG'));
+        $this->assertSame(3, substr_count($catalogBlock, 'JSON_HEX_AMP'));
+        $this->assertSame(3, substr_count($catalogBlock, 'JSON_HEX_APOS'));
+        $this->assertSame(3, substr_count($catalogBlock, 'JSON_HEX_QUOT'));
+    }
+
+    public function testDynamicallyAddedRedirectStepHidesCheckoutRoutesWithFolderControls(): void
+    {
+        $handlers = file_get_contents(__DIR__ . '/../../code/admin/js/flows/handlers.js');
+
+        $this->assertStringContainsString("sec.querySelector('.flow-checkout-routes-group')", $handlers);
+        $this->assertStringContainsString("checkoutRoutes.style.display = e.target.value === 'folder' ? 'block' : 'none'", $handlers);
+    }
+
     public function testCheckoutRoutesGroupUsesTheSameTitlePatternAsOtherFlowGroups(): void
     {
         $form = file_get_contents(__DIR__ . '/../../code/admin/campsettings.php');

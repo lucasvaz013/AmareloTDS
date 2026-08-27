@@ -318,6 +318,7 @@ final class AdminOps
     {
         $common = $this->db->get_common_settings();
         $raw = is_array($common['destinations'] ?? null) ? $common['destinations'] : [];
+        $before = $raw;
         $found = false;
         foreach ($raw as &$d) {
             if (is_array($d) && (string)($d['id'] ?? '') === $id) {
@@ -339,6 +340,7 @@ final class AdminOps
             throw new YtdsOpError('DESTINATION_NOT_FOUND', 404, 'destination not found: ' . $id, 'ytds destinations list');
         }
         $clean = DestinationLibrary::sanitize($raw, $this->idGen());
+        $this->assertRemovedLibraryIdsUnused('destination', $before, $clean);
         if ($commit) {
             $common['destinations'] = $clean;
             $this->saveCommon($common, 'destinations');
@@ -393,7 +395,8 @@ final class AdminOps
 
     /**
      * Panel library pages replace the whole catalog. Refuse dropping any id still referenced
-     * by Checkout Routes, using the same RESOURCE_IN_USE contract as CLI/API delete.
+     * by Checkout Routes or moving a referenced Destination to another Network, using the same
+     * RESOURCE_IN_USE contract as CLI/API delete.
      *
      * @param array<int, mixed> $before
      * @param array<int, mixed> $after
@@ -411,6 +414,27 @@ final class AdminOps
                 'RESOURCE_IN_USE',
                 409,
                 $resourceType . ' is used by Checkout Routes: ' . $id,
+                'remove the Checkout Route reference first; used by ' . implode(', ', $usedBy)
+            );
+        }
+        if ($resourceType !== 'destination') {
+            return;
+        }
+
+        $beforeNetworks = $this->destinationNetworkIds($before);
+        $afterNetworks = $this->destinationNetworkIds($after);
+        foreach (array_intersect(array_keys($beforeNetworks), array_keys($afterNetworks)) as $id) {
+            if ($beforeNetworks[$id] === $afterNetworks[$id]) {
+                continue;
+            }
+            $usedBy = $this->checkoutRouteUsage('destination', $id);
+            if ($usedBy === []) {
+                continue;
+            }
+            throw new YtdsOpError(
+                'RESOURCE_IN_USE',
+                409,
+                'destination Network cannot change while used by Checkout Routes: ' . $id,
                 'remove the Checkout Route reference first; used by ' . implode(', ', $usedBy)
             );
         }
@@ -433,6 +457,22 @@ final class AdminOps
             }
         }
         return $ids;
+    }
+
+    /** @param array<int, mixed> $list @return array<string, string> */
+    private function destinationNetworkIds(array $list): array
+    {
+        $networkIds = [];
+        foreach ($list as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+            $id = trim((string)($entry['id'] ?? ''));
+            if ($id !== '') {
+                $networkIds[$id] = trim((string)($entry['network_id'] ?? ''));
+            }
+        }
+        return $networkIds;
     }
 
     /** @return array<int, string> */

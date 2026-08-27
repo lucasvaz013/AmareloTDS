@@ -186,6 +186,38 @@ final class LibraryOpsTest extends TestCase
         $this->assertSame(1, $this->ops->destinations()['count']);
     }
 
+    public function testDestinationNetworkReassignmentIsBlockedWhenCheckoutRouteUsesIt(): void
+    {
+        $networkA = $this->ops->networkAdd('A', '', true)['network']['id'];
+        $networkB = $this->ops->networkAdd('B', '', true)['network']['id'];
+        $destinationId = $this->ops->destinationAdd('D', 'https://example.com', $networkA, true)['destination']['id'];
+        $this->db->seedCampaign(7, 'CampA', [
+            'black' => [
+                'flows' => [[
+                    'name' => 'F1',
+                    'steps' => [[
+                        'checkout_routes' => [[
+                            'network_id' => $networkA,
+                            'links' => [['n' => 1, 'destination_id' => $destinationId]],
+                        ]],
+                    ]],
+                ]],
+            ],
+        ]);
+
+        foreach ([false, true] as $commit) {
+            try {
+                $this->ops->destinationUpdate($destinationId, null, null, $networkB, $commit);
+                $this->fail('expected YtdsOpError');
+            } catch (YtdsOpError $e) {
+                $this->assertSame('RESOURCE_IN_USE', $e->errorCode);
+                $this->assertStringContainsString('CampA: F1 — step 1', $e->hint);
+            }
+        }
+
+        $this->assertSame($networkA, $this->ops->destinations()['destinations'][0]['network_id']);
+    }
+
     public function testMalformedCheckoutRoutesBlockLibraryDeletion(): void
     {
         $nid = $this->ops->networkAdd('N', '', true)['network']['id'];

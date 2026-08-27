@@ -71,7 +71,7 @@ Every mutation is a dry run unless `commit=1` is passed. A dry run validates and
 
 Mutations run through the same `CampaignService` and validators as the panel save, so the API, the CLI, and the panel share one write path. Domain overlap is checked in dry run and commit alike and refused with `DOMAIN_CONFLICT`. `campaign.create` uses a template with the author's dangerous defaults removed and refuses any template that still references them.
 
-Network and Destination deletion is checked in dry run and commit. A Checkout Route reference returns HTTP 409 with `RESOURCE_IN_USE`; its hint identifies the campaign, flow, and step that must be edited first. The Networks/Destinations panel pages apply the same check when a catalog save would drop those ids.
+Network and Destination deletion is checked in dry run and commit. Reassigning a referenced Destination to another Network is checked the same way. A Checkout Route reference returns HTTP 409 with `RESOURCE_IN_USE`; its hint identifies the campaign, flow, and step that must be edited first. The Networks/Destinations panel pages apply the same checks when replacing a catalog.
 
 ## Example
 

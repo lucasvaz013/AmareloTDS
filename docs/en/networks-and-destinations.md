@@ -35,9 +35,9 @@ A folder step can define `checkout_routes`, an independent weighted experiment t
 
 The route roll is separate from landing equal/weighted/Thompson distribution. A single route is always 100%; with multiple routes, their configured weights are used. The selection is sticky for the click/session.
 
-At the first pageview, the selected route is composed from the live Network parameters and Destination base URLs, then URL macros are resolved. The resulting Network id/name and link URLs are frozen in reserved click params (`_ytds_network_id`, `_ytds_network_name`, `_ytds_checkout`). Refreshes, subsequent steps, and Direct Load use that snapshot, so later library edits cannot change an in-flight click. Network or Destination deletion is blocked while a campaign Checkout Route references it.
+At the first pageview, the selected route is composed from the live Network parameters and Destination base URLs, then URL macros are resolved. The resulting Network id/name and link URLs are frozen in reserved click params (`_ytds_network_id`, `_ytds_network_name`, `_ytds_checkout`). Refreshes, subsequent steps, and Direct Load use that snapshot, so later library edits cannot change an in-flight click. Network or Destination deletion is blocked while a campaign Checkout Route references it. A referenced Destination also cannot be reassigned to another Network until the route reference is removed.
 
-Deletion is blocked on every write door: CLI/Admin API (`RESOURCE_IN_USE`) and the Networks/Destinations panel pages, which replace the whole catalog.
+Deletion and referenced-Destination Network reassignment are blocked on every write door: CLI/Admin API (`RESOURCE_IN_USE`) and the Networks/Destinations panel pages, which replace the whole catalog.
 
 When Checkout Routes are active, they are the source of truth and the legacy per-folder Destinations editor is read-only. If `checkout_routes` is empty, the legacy behavior below remains fully supported.
 

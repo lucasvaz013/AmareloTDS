@@ -22,8 +22,10 @@ export function handleStepActionChange(e) {
     if (!sec) return;
     var folders = sec.querySelector('.flow-step-folders');
     var redirects = sec.querySelector('.flow-step-redirects');
+    var checkoutRoutes = sec.querySelector('.flow-checkout-routes-group');
     if (folders) folders.style.display = e.target.value === 'folder' ? 'block' : 'none';
     if (redirects) redirects.style.display = e.target.value === 'redirect' ? 'block' : 'none';
+    if (checkoutRoutes) checkoutRoutes.style.display = e.target.value === 'folder' ? 'block' : 'none';
     updateStepListInfo(sec.dataset.flowIndex, sec.dataset.stepIndex);
     updateStepControls(sec.dataset.flowIndex);
 }
