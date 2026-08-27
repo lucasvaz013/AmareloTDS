@@ -27,6 +27,7 @@ $networks = $db->get_common_settings()['networks'] ?? [];
             Write each parameter as <code>name={macro}</code>, joined with <code>&amp;</code> — e.g.
             <code>subid={clickid}&amp;subid2={c.campaignname}</code>. Only a bare macro as the whole
             value resolves; a parameter filled by the traffic source is <code>{c.NAME}</code>.
+            Open <strong>Parameters</strong> in the header for Meta examples and the internal macro reference.
         </p>
     </div>
 

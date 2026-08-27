@@ -95,6 +95,10 @@ $headerDateConfig = [
                                     </span>
                                 </a>
                                 <?php endif; ?>
+                                <a class="nav-link" href="#" id="openParameters">
+                                    <i class="bi bi-braces"></i>
+                                    <span>Parameters</span>
+                                </a>
                                 <a class="nav-link" href="#" id="openSettings">
                                     <i class="bi bi-gear"></i>
                                     <span>Settings</span>
@@ -113,6 +117,7 @@ $headerDateConfig = [
 <script id="headerDateConfig" type="application/json">
     <?=json_encode($headerDateConfig, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>
 </script>
+<?php include __DIR__ . '/parametersmodal.php'; ?>
 <?php include __DIR__ . '/settingsmodal.php'; ?>
 <div class="overlay" id="updateOverlay">
     <canvas id="matrix-rain"></canvas>

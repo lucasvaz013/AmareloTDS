@@ -3,9 +3,56 @@
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../../code/checkoutroutes.php';
+require_once __DIR__ . '/../../code/macros.php';
 
 final class CheckoutRoutesTest extends TestCase
 {
+    public function testCheckoutMacroParamsExposeInboundQueryBeforeClickInsert(): void
+    {
+        $clickParams = checkout_macro_click_params([
+            'ip' => '127.0.0.1',
+            'qs' => [
+                'campaignname' => 'Meta Campaign A',
+                'utm_source' => 'facebook',
+            ],
+        ]);
+        $macros = new MacrosProcessor(null, $clickParams, 'CLICK-1', 'USER-1');
+
+        self::assertSame(
+            'https://checkout.test?subid=CLICK-1&subid2=Meta+Campaign+A&source=facebook',
+            $macros->replace_url_macros(
+                'https://checkout.test?subid={clickid}&subid2={c.campaignname}&source={c.utm_source}'
+            )
+        );
+    }
+
+    public function testCheckoutMacroParamsPreserveExplicitParamsAndDoNotChangeMacroRules(): void
+    {
+        $previousDb = $GLOBALS['db'] ?? null;
+        $GLOBALS['db'] = new class {
+            public function get_click_by_clickid(string $clickid): array
+            {
+                return ['params' => []];
+            }
+        };
+        $clickParams = checkout_macro_click_params([
+            'qs' => ['campaignname' => 'Query Campaign', 'adname' => 'Ad A'],
+            'params' => ['campaignname' => 'Explicit Campaign'],
+        ]);
+        $macros = new MacrosProcessor(null, $clickParams, 'CLICK-1', 'USER-1');
+
+        try {
+            self::assertSame(
+                'https://checkout.test?campaign=Explicit+Campaign&ad=Ad+A&missing=%7Bc.missing%7D&embedded=prefix-%7Bc.adname%7D',
+                $macros->replace_url_macros(
+                    'https://checkout.test?campaign={c.campaignname}&ad={c.adname}&missing={c.missing}&embedded=prefix-{c.adname}'
+                )
+            );
+        } finally {
+            $GLOBALS['db'] = $previousDb;
+        }
+    }
+
     public function testResolveCheckoutSnapshotUsesSelectedRouteAndCurrentNetworkParams(): void
     {
         $step = StepSettings::fromArray([

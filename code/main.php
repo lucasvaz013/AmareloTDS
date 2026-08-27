@@ -550,7 +550,8 @@ function build_checkout_snapshot(
                 $step
             );
         }
-        $macros = new MacrosProcessor($campaign, $clickParams, $clickid, $userid);
+        $macroClickParams = checkout_macro_click_params($clickParams);
+        $macros = new MacrosProcessor($campaign, $macroClickParams, $clickid, $userid);
         return resolve_checkout_snapshot(
             $stepIndex,
             $step,

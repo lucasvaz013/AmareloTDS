@@ -3,6 +3,21 @@
 require_once __DIR__ . '/campaign.php';
 require_once __DIR__ . '/destinations.php';
 
+/**
+ * Makes query parameters captured by FiltrationCore available to the existing {c.*} macro
+ * contract while a Checkout Route is frozen before the click row exists.
+ *
+ * @param array<string, mixed> $clickParams
+ * @return array<string, mixed>
+ */
+function checkout_macro_click_params(array $clickParams): array
+{
+    $queryParams = is_array($clickParams['qs'] ?? null) ? $clickParams['qs'] : [];
+    $explicitParams = is_array($clickParams['params'] ?? null) ? $clickParams['params'] : [];
+    $clickParams['params'] = array_replace($queryParams, $explicitParams);
+    return $clickParams;
+}
+
 /** @return array{network_id:string,links:array<int,array{n:int,destination_id:string}>} */
 function checkout_selection_from_route(CheckoutRouteSettings $route): array
 {

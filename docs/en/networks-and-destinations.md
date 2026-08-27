@@ -11,6 +11,12 @@ Each network entry has:
 - **Name** — a display label, up to 64 characters.
 - **Parameters** — the query string the network expects, such as `subid={clickid}&subid2={c.campaignname}`. A leading `?` or `&` is stripped on save; write only the key=value pairs.
 
+The **Parameters** button beside Settings opens the built-in macro reference. Its initial traffic-source
+catalog documents Meta dynamic URL values and the matching AmareloTDS input macros. For example,
+configure `campaignname={{campaign.name}}` in the Meta ad URL and map it in a Network as
+`subid2={c.campaignname}`. Meta expands the double-brace value before the request reaches the TDS;
+`{c.campaignname}` then reads the captured `campaignname` query parameter.
+
 Networks are persisted to `common.settings.networks`. The installation accepts up to 100 networks.
 
 ## Destinations
@@ -94,7 +100,7 @@ When a landing is served, `{link:N}` tokens in the HTML are resolved after MVT s
 For each `{link:N}` token found in the HTML:
 
 1. If the click has a frozen Checkout Route snapshot for this step, the system looks up `N` there. Otherwise it looks up `N` in the assigned folder's legacy `links` array.
-2. Frozen Checkout Route URLs are served as stored — they are not recomposed and do not run through URL macros again. Legacy `folders[].links` URLs still pass through the URL macro processor, which substitutes macros such as `{clickid}` and `{c.utm_source}` in query parameter values.
+2. Checkout Route URLs resolve URL macros while the route is first selected and are then frozen. Incoming query parameters captured for that request are available to `{c.NAME}` even though the click row has not been inserted yet. Frozen URLs are served as stored — they are not recomposed and do not run through URL macros again. Legacy `folders[].links` URLs still pass through the URL macro processor, which substitutes macros such as `{clickid}` and `{c.utm_source}` in query parameter values.
 3. If no row matches `N`, the token is replaced with `#` and the event is logged. The literal `{link:N}` string is never exposed to the visitor.
 
 ### Macro substitution in destination URLs

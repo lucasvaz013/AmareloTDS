@@ -324,6 +324,7 @@ Campo‑a‑campo em `docs/en/`; a campanha é achada pelo domínio.
 ### Macros
 - **HTML da landing:** só `{clickid}`, `{userid}`, `{px}` (qualquer posição); `{next}`/`{offer}` avançam o step (não no último).
 - **URL de redirect/S2S:** macro só substitui se for o **valor inteiro** de um query param (`?cid={clickid}` sim; `?cid=pre-{clickid}` e `/track/{clickid}/` literais). `{c.NOME}` = param da entrada; `{domain}` = host.
+- **Referência no painel:** **Parameters**, ao lado de Settings, lista macros internas e o primeiro catálogo de parâmetros dinâmicos do Meta (`campaignname={{campaign.name}}` → `{c.campaignname}`). Checkout Routes resolve `{c.*}` com a query da requisição antes de congelar o snapshot, mesmo antes do INSERT do click.
 
 ---
 
