@@ -292,7 +292,7 @@ Construídas neste fork (vivem em `staging`), com o design em plan docs commitad
 | Destinations `{link:N}` | Destino externo por‑landing no step, gravado como snapshot no render | `code/campaign.php`, `code/htmlprocessing.php` | `docs/en/networks-and-destinations.md` |
 | Networks + Destinations | Bibliotecas globais (`common.settings`) que alimentam `{link:N}` | `code/networks.php`, `code/destinations.php` | `docs/en/networks-and-destinations.md` |
 | Checkout Routes | Experimento ponderado Network→Destinations por step, sticky e congelado no click | `code/checkoutroutes.php`, `code/experiments.php` | `docs/en/networks-and-destinations.md` |
-| ytds CLI (fases 0–4) | Operação por agentes — ver **§15** e `docs/en/ytds-cli.md`. Local in‑process (`--env local`) ou remoto via `/api/admin.php` (Bearer `adminApiToken`). Reads + mutação segura (`--dry-run` padrão, `--yes` commita) sobre `campaign`/`networks`/`destinations`/`landing`, pelos MESMOS validators do painel; segredos mascarados. | `bin/ytds` + `cli/`, `code/adminops.php`, `code/api/admin.php` | `docs/en/ytds-cli.md`, `admin-api.md` |
+| ytds CLI (fases 0–4) | Operação por agentes — ver **§15** e `docs/en/ytds-cli.md`. Local in‑process (`--env local`) ou remoto via `/api/admin.php` (Bearer `adminApiToken`). Reads + mutação segura (`--dry-run` padrão, `--yes` commita) sobre `campaign`/`networks`/`destinations`/`landing`; landing também tem download/edit/replace e pack/verify de ZIP. | `bin/ytds` + `cli/`, `code/adminops.php`, `code/api/admin.php` | `docs/en/ytds-cli.md`, `admin-api.md` |
 
 **Padrão "página‑registro":** Integrations, Landings, Networks e Destinations seguem o mesmo
 molde; a próxima feature desse tipo deve copiá‑lo, sem inventar uma 2ª convenção: botão em
@@ -383,7 +383,7 @@ de comandos no §9; referência exaustiva em `docs/en/ytds-cli.md`, procedimento
   `/api/admin.php`, Bearer `adminApiToken` de `~/.config/ytds/config.json`). Sempre nomeie o
   `--env`; `prod` é produção, sem experimento.
 - **Mutação = dry‑run por padrão.** Todo write (`create\|clone\|rename\|delete\|domains\|patch\|kill-defaults`,
-  `networks/destinations add\|update\|delete`, `landing upload\|duplicate\|delete`) valida e imprime
+  `networks/destinations add\|update\|delete`, `landing upload\|edit\|replace\|duplicate\|delete`) valida e imprime
   before/after sem gravar; só `--yes` commita. Overlap de domínio → exit 5 em dry‑run e commit.
 - **Loop seguro.** ler (`campaign get`) → dry‑run → conferir diff → `--yes`. Diff maior que o
   esperado: **não** commita, investiga.

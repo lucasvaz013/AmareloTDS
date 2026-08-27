@@ -14,8 +14,9 @@
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/doctor.php';
 require_once __DIR__ . '/remote.php';
+require_once dirname(__DIR__) . '/code/landings.php';
 
-const YTDS_SURFACE = 'ytds <campaigns list | campaign get <id> [--section p] [--full] | campaign create --name X [--from-template blank] [--yes] | campaign clone|rename|delete|domains|kill-defaults <id> [...] [--yes] | campaign patch <id> (--apply f.json | --set path=val ...) [--yes] | networks list|add|update|delete | destinations list|add|update|delete | landing list|upload|duplicate|delete | stats --campaign N [--columns a,b] [--groupby c] | clicks --campaign N [--view v] [--limit N] [--page N] [--sort field] [--dir asc|desc] [--filter field:op:value] [--param key] [--search term] | version | doctor>; global: [--env local|stg|prod] [--db path]';
+const YTDS_SURFACE = 'ytds <campaigns list | campaign get <id> [--section p] [--full] | campaign create --name X [--from-template blank] [--yes] | campaign clone|rename|delete|domains|kill-defaults <id> [...] [--yes] | campaign patch <id> (--apply f.json | --set path=val ...) [--yes] | networks list|add|update|delete | destinations list|add|update|delete | landing list|upload|download|edit|replace|duplicate|delete|pack|verify | stats --campaign N [--columns a,b] [--groupby c] | clicks --campaign N [--view v] [--limit N] [--page N] [--sort field] [--dir asc|desc] [--filter field:op:value] [--param key] [--search term] | version | doctor>; global: [--env local|stg|prod] [--db path]';
 
 function ytds_run(array $argv): int
 {
@@ -69,7 +70,7 @@ function ytds_dispatch(array $args): int
  */
 function ytds_parse(array $args): array
 {
-    $valueFlags = ['db', 'env', 'section', 'campaign', 'from', 'to', 'columns', 'groupby', 'view', 'limit', 'name', 'set', 'apply', 'from-template', 'params', 'base-url', 'network', 'zip', 'page', 'sort', 'dir', 'search', 'filter', 'filter-cond', 'param'];
+    $valueFlags = ['db', 'env', 'section', 'campaign', 'from', 'to', 'columns', 'groupby', 'view', 'limit', 'name', 'set', 'apply', 'from-template', 'params', 'base-url', 'network', 'zip', 'file', 'out', 'page', 'sort', 'dir', 'search', 'filter', 'filter-cond', 'param'];
     $boolFlags = ['full', 'yes'];
     $pos = [];
     $opts = [];
@@ -413,6 +414,44 @@ function ytds_cmd_landing(array $pos, array $opts): int
     $env = ytds_env($opts);
     $commit = isset($opts['yes']);
     switch ($verb) {
+        case 'pack':
+            $source = $pos[2] ?? '';
+            $out = isset($opts['out']) ? (string)$opts['out'] : '';
+            if ($source === '' || $out === '') {
+                return ytds_fail('INVALID_ARG', 'landing pack needs <directory> and --out <zip>', 'ytds landing pack ./page --out page.zip', 2);
+            }
+            if ($env !== 'local') {
+                return ytds_fail('INVALID_ARG', 'landing pack is a local-only utility', 'omit --env or use --env local', 2);
+            }
+            if (file_exists($out)) {
+                return ytds_fail('INVALID_ARG', 'output already exists: ' . $out, 'choose a new --out path', 2);
+            }
+            try {
+                $meta = LandingArchive::pack($source, $out);
+            } catch (InvalidArgumentException $e) {
+                return ytds_fail('INVALID_ARG', $e->getMessage(), '', 2);
+            } catch (Throwable $e) {
+                return ytds_fail('WRITE_FAILED', $e->getMessage(), '', 1);
+            }
+            ytds_emit(['action' => 'landing.pack', 'output' => realpath($out) ?: $out] + $meta);
+            return 0;
+        case 'verify':
+            $zip = isset($opts['zip']) ? (string)$opts['zip'] : '';
+            if ($zip === '') {
+                return ytds_fail('INVALID_ARG', 'landing verify needs --zip <file>', 'ytds landing verify --zip page.zip', 2);
+            }
+            if ($env !== 'local') {
+                return ytds_fail('INVALID_ARG', 'landing verify is a local-only utility', 'omit --env or use --env local', 2);
+            }
+            try {
+                $meta = LandingArchive::inspect($zip);
+            } catch (InvalidArgumentException $e) {
+                return ytds_fail('INVALID_ARG', $e->getMessage(), '', 2);
+            } catch (Throwable $e) {
+                return ytds_fail('INTERNAL', $e->getMessage(), '', 1);
+            }
+            ytds_emit(['action' => 'landing.verify', 'zip' => realpath($zip) ?: $zip] + $meta);
+            return 0;
         case 'list':
             if ($env !== 'local') {
                 return ytds_remote($env, 'landing.list', []);
@@ -437,6 +476,59 @@ function ytds_cmd_landing(array $pos, array $opts): int
             }
             $dir = ytds_local_landings_dir();
             return ytds_local($opts, static fn(AdminOps $o): array => $o->landingUpload($dir, $name, $zip, $commit));
+        case 'download':
+            $name = $pos[2] ?? '';
+            $out = isset($opts['out']) ? (string)$opts['out'] : '';
+            if ($name === '' || $out === '') {
+                return ytds_fail('INVALID_ARG', 'landing download needs a name and --out <zip>', 'ytds landing download <name> --out page.zip --env stg', 2);
+            }
+            if (file_exists($out) || !is_dir(dirname($out))) {
+                return ytds_fail('INVALID_ARG', 'download output must be new and its parent must exist: ' . $out, 'choose a new --out path', 2);
+            }
+            if ($env !== 'local') {
+                return ytds_remote_landing_download($env, $name, $out);
+            }
+            $dir = ytds_local_landings_dir();
+            return ytds_local($opts, static function (AdminOps $o) use ($dir, $name, $out): array {
+                $result = $o->landingDownload($dir, $name, $out, false);
+                $result['output'] = realpath($out) ?: $out;
+                return $result;
+            });
+        case 'edit':
+            $name = $pos[2] ?? '';
+            $file = isset($opts['file']) ? (string)$opts['file'] : '';
+            $manifest = isset($opts['apply']) ? (string)$opts['apply'] : '';
+            if ($name === '' || $file === '' || $manifest === '') {
+                return ytds_fail('INVALID_ARG', 'landing edit needs a name, --file, and --apply manifest.json', 'ytds landing edit <name> --file index.html --apply edits.json', 2);
+            }
+            $raw = is_file($manifest) ? file_get_contents($manifest) : false;
+            $decoded = $raw === false ? null : json_decode($raw, true);
+            if (!is_array($decoded) || !is_array($decoded['replacements'] ?? null)) {
+                return ytds_fail('INVALID_ARG', 'edit manifest must be JSON with a replacements array: ' . $manifest, '', 2);
+            }
+            if ($env !== 'local') {
+                return ytds_remote($env, 'landing.edit', ytds_yes(['name' => $name, 'file' => $file], $commit), 'POST', $raw);
+            }
+            $dir = ytds_local_landings_dir();
+            return ytds_local($opts, static fn(AdminOps $o): array => $o->landingEdit($dir, $name, $file, $decoded['replacements'], $commit));
+        case 'replace':
+            $name = $pos[2] ?? '';
+            $zip = isset($opts['zip']) ? (string)$opts['zip'] : '';
+            if ($name === '' || $zip === '') {
+                return ytds_fail('INVALID_ARG', 'landing replace needs a name and --zip <file>', 'ytds landing replace <name> --zip page.zip', 2);
+            }
+            if (!is_file($zip)) {
+                return ytds_fail('INVALID_ARG', 'zip file not found: ' . $zip, 'ytds landing verify --zip ' . $zip, 2);
+            }
+            if ($env !== 'local') {
+                $bytes = file_get_contents($zip);
+                if ($bytes === false) {
+                    return ytds_fail('INVALID_ARG', 'cannot read zip file: ' . $zip, '', 2);
+                }
+                return ytds_remote($env, 'landing.replace', ytds_yes(['name' => $name], $commit), 'POST', $bytes);
+            }
+            $dir = ytds_local_landings_dir();
+            return ytds_local($opts, static fn(AdminOps $o): array => $o->landingReplace($dir, $name, $zip, $commit));
         case 'duplicate':
             $from = $pos[2] ?? '';
             $to = $pos[3] ?? '';
@@ -459,7 +551,7 @@ function ytds_cmd_landing(array $pos, array $opts): int
             $dir = ytds_local_landings_dir();
             return ytds_local($opts, static fn(AdminOps $o): array => $o->landingDelete($dir, $name, $commit));
         default:
-            return ytds_fail('USAGE', 'unknown landing verb: ' . $verb, 'ytds landing <list|upload|duplicate|delete>', 2);
+            return ytds_fail('USAGE', 'unknown landing verb: ' . $verb, 'ytds landing <list|upload|download|edit|replace|duplicate|delete|pack|verify>', 2);
     }
 }
 
@@ -675,12 +767,40 @@ function ytds_remote(string $env, string $action, array $params, string $method 
     return ytds_fail($code, $message, $hint, ytds_exit_for_code($code, $resp['status']));
 }
 
+function ytds_remote_landing_download(string $env, string $name, string $output): int
+{
+    $cfg = ytds_env_config($env);
+    if (isset($cfg['error'])) {
+        [$code, $message, $hint] = $cfg['error'];
+        return ytds_fail($code, $message, $hint, ytds_exit_for_code($code));
+    }
+    $resp = ytds_http_download($cfg['url'], $cfg['token'], ['action' => 'landing.download', 'name' => $name], $output);
+    if (isset($resp['transport'])) {
+        return ytds_fail('TRANSPORT_ERROR', 'download from ' . $env . ' failed: ' . $resp['transport'], 'check the env url and output path', 1);
+    }
+    if ($resp['status'] !== 200) {
+        $decoded = json_decode($resp['body'], true);
+        $code = is_array($decoded) && isset($decoded['code']) ? (string)$decoded['code'] : 'HTTP_' . $resp['status'];
+        $message = is_array($decoded) && isset($decoded['message']) ? (string)$decoded['message'] : trim($resp['body']);
+        $hint = is_array($decoded) && isset($decoded['hint']) ? (string)$decoded['hint'] : '';
+        return ytds_fail($code, $message, $hint, ytds_exit_for_code($code, $resp['status']));
+    }
+    try {
+        $meta = LandingArchive::inspect($output);
+    } catch (Throwable $e) {
+        @unlink($output);
+        return ytds_fail('INTERNAL', 'downloaded landing failed ZIP verification: ' . $e->getMessage(), '', 1);
+    }
+    ytds_emit(['action' => 'landing.download', 'name' => $name, 'output' => realpath($output) ?: $output] + $meta);
+    return 0;
+}
+
 function ytds_exit_for_code(string $code, int $httpStatus = 0): int
 {
     static $map = [
         'AUTH_INVALID' => 4, 'API_DISABLED' => 4, 'AUTH_MISSING' => 4, 'CONFIG_MISSING' => 4, 'CONFIG_INVALID' => 4,
         'CAMPAIGN_NOT_FOUND' => 3, 'SECTION_NOT_FOUND' => 3, 'DB_NOT_FOUND' => 3,
-        'INVALID_ARG' => 2, 'UNKNOWN_ACTION' => 2, 'USAGE' => 2, 'METHOD_NOT_ALLOWED' => 2, 'VALIDATION' => 2, 'RESOURCE_IN_USE' => 2,
+        'INVALID_ARG' => 2, 'UNKNOWN_ACTION' => 2, 'USAGE' => 2, 'METHOD_NOT_ALLOWED' => 2, 'VALIDATION' => 2, 'RESOURCE_IN_USE' => 2, 'REPLACEMENT_COUNT_MISMATCH' => 2,
         'DOMAIN_CONFLICT' => 5,
         'NETWORK_NOT_FOUND' => 3, 'DESTINATION_NOT_FOUND' => 3, 'LANDING_NOT_FOUND' => 3,
         'SETTINGS_CORRUPT' => 1, 'INTERNAL' => 1, 'TRANSPORT_ERROR' => 1, 'WRITE_FAILED' => 1,

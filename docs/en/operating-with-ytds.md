@@ -148,6 +148,20 @@ bin/ytds landing delete promo --env stg                          # dry run lists
 bin/ytds landing delete promo --yes --env stg
 ```
 
+For a safe edit cycle, download the current STG landing, verify/unpack it, prepare exact counted replacements, preview the edit, commit it, then download again and compare the returned SHA-256. Whole-folder replacement follows the same dry-run/commit rule:
+
+```
+bin/ytds landing download promo --out ./promo-before.zip --env stg
+bin/ytds landing verify --zip ./promo-before.zip
+bin/ytds landing edit promo --file index.html --apply ./edits.json --env stg
+bin/ytds landing edit promo --file index.html --apply ./edits.json --yes --env stg
+bin/ytds landing pack ./promo-work --out ./promo-new.zip
+bin/ytds landing replace promo --zip ./promo-new.zip --env stg
+bin/ytds landing replace promo --zip ./promo-new.zip --yes --env stg
+```
+
+The edit manifest can alter delays, checkout `href`s, text/scripts, and insert `ytdsEvent()` or `ytdsConversion()` calls. Each exact anchor carries an `expected` count; any mismatch aborts the whole edit before a write.
+
 ## Scheduled health check
 
 A cron on the operator's machine can watch an instance and alert on failure. See `cli/cron/ytds-health.sh`:

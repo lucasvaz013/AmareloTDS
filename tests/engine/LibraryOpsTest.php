@@ -308,6 +308,26 @@ final class LibraryOpsTest extends TestCase
         $this->assertSame(0, $this->ops->landings($this->landingsDir)['count']);
     }
 
+    public function testLandingUploadRejectsSymbolicLinkEntry(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'ytds_ziptest_') . '.zip';
+        $zip = new ZipArchive();
+        $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->addFromString('index.html', 'x');
+        $zip->addFromString('assets-link', '../../outside');
+        $zip->setExternalAttributesName('assets-link', ZipArchive::OPSYS_UNIX, 0120777 << 16);
+        $zip->close();
+
+        try {
+            $this->ops->landingUpload($this->landingsDir, 'evil-link', $path, true);
+            $this->fail('expected YtdsOpError');
+        } catch (YtdsOpError $e) {
+            $this->assertSame('INVALID_ARG', $e->errorCode);
+        }
+        $this->assertSame(0, $this->ops->landings($this->landingsDir)['count']);
+        @unlink($path);
+    }
+
     public function testLandingUploadRejectsCollision(): void
     {
         $zip = $this->makeZip(['index.html' => 'x']);
@@ -343,5 +363,72 @@ final class LibraryOpsTest extends TestCase
         } catch (YtdsOpError $e) {
             $this->assertSame('LANDING_NOT_FOUND', $e->errorCode);
         }
+    }
+
+    public function testLandingDownloadCreatesVerifiedZip(): void
+    {
+        $zip = $this->makeZip(['index.html' => '<h1>download</h1>', 'assets/a.js' => 'a']);
+        $this->ops->landingUpload($this->landingsDir, 'downloadable', $zip, true);
+        $output = tempnam(sys_get_temp_dir(), 'ytds_download_') . '.zip';
+
+        $result = $this->ops->landingDownload($this->landingsDir, 'downloadable', $output);
+
+        $this->assertFileExists($output);
+        $this->assertSame('landing.download', $result['action']);
+        $this->assertSame(hash_file('sha256', $output), $result['sha256']);
+        $this->assertSame(2, $result['files']);
+        @unlink($output);
+    }
+
+    public function testLandingEditIsDryRunByDefaultAndExactOnCommit(): void
+    {
+        $zip = $this->makeZip(['index.html' => '<a href="old">Buy</a><script>delay=10;</script>']);
+        $this->ops->landingUpload($this->landingsDir, 'editable', $zip, true);
+        $replacements = [
+            ['search' => 'href="old"', 'replace' => 'href="{link:1}"', 'expected' => 1],
+            ['search' => 'delay=10', 'replace' => 'delay=90', 'expected' => 1],
+        ];
+
+        $dry = $this->ops->landingEdit($this->landingsDir, 'editable', 'index.html', $replacements, false);
+        $this->assertTrue($dry['dry_run']);
+        $this->assertSame('<a href="old">Buy</a><script>delay=10;</script>', file_get_contents($this->landingsDir . '/editable/index.html'));
+
+        $done = $this->ops->landingEdit($this->landingsDir, 'editable', 'index.html', $replacements, true);
+        $this->assertFalse($done['dry_run']);
+        $this->assertNotSame($done['before_sha256'], $done['after_sha256']);
+        $this->assertSame('<a href="{link:1}">Buy</a><script>delay=90;</script>', file_get_contents($this->landingsDir . '/editable/index.html'));
+    }
+
+    public function testLandingEditRejectsWrongExpectedCountWithoutWriting(): void
+    {
+        $zip = $this->makeZip(['index.html' => 'same same']);
+        $this->ops->landingUpload($this->landingsDir, 'counts', $zip, true);
+
+        try {
+            $this->ops->landingEdit($this->landingsDir, 'counts', 'index.html', [
+                ['search' => 'same', 'replace' => 'new', 'expected' => 1],
+            ], true);
+            $this->fail('expected replacement count mismatch');
+        } catch (YtdsOpError $e) {
+            $this->assertSame('REPLACEMENT_COUNT_MISMATCH', $e->errorCode);
+        }
+        $this->assertSame('same same', file_get_contents($this->landingsDir . '/counts/index.html'));
+    }
+
+    public function testLandingReplaceIsAtomicAndDryRunSafe(): void
+    {
+        $old = $this->makeZip(['index.html' => 'old', 'old.txt' => 'old']);
+        $new = $this->makeZip(['index.html' => 'new', 'new.txt' => 'new']);
+        $this->ops->landingUpload($this->landingsDir, 'replaceable', $old, true);
+
+        $dry = $this->ops->landingReplace($this->landingsDir, 'replaceable', $new, false);
+        $this->assertTrue($dry['dry_run']);
+        $this->assertSame('old', file_get_contents($this->landingsDir . '/replaceable/index.html'));
+
+        $done = $this->ops->landingReplace($this->landingsDir, 'replaceable', $new, true);
+        $this->assertFalse($done['dry_run']);
+        $this->assertSame('new', file_get_contents($this->landingsDir . '/replaceable/index.html'));
+        $this->assertFileDoesNotExist($this->landingsDir . '/replaceable/old.txt');
+        $this->assertFileExists($this->landingsDir . '/replaceable/new.txt');
     }
 }

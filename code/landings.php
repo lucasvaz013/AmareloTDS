@@ -79,6 +79,139 @@ final class LandingUsage
     }
 }
 
+/** ZIP creation and validation shared by CLI utilities and remote landing operations. */
+final class LandingArchive
+{
+    public const MAX_FILES = 20000;
+    public const MAX_UNCOMPRESSED_BYTES = 2147483648;
+
+    /** @return array{files:int,bytes:int,sha256:string,hasIndex:bool} */
+    public static function inspect(string $zipPath, bool $requireIndex = true): array
+    {
+        if (!is_file($zipPath) || !is_readable($zipPath)) {
+            throw new InvalidArgumentException('zip file is not readable');
+        }
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            throw new InvalidArgumentException('cannot open zip archive');
+        }
+        $files = 0;
+        $uncompressedBytes = 0;
+        $hasIndex = false;
+        $seen = [];
+        try {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $entry = str_replace('\\', '/', (string)$zip->getNameIndex($i));
+                if ($entry === '' || str_starts_with($entry, '/') || preg_match('#(^|/)\.\.(/|$)#', $entry) === 1) {
+                    throw new InvalidArgumentException('unsafe zip entry: ' . $entry);
+                }
+                $normalized = rtrim($entry, '/');
+                if ($normalized === '') {
+                    continue;
+                }
+                $portableKey = strtolower($normalized);
+                if (isset($seen[$portableKey])) {
+                    throw new InvalidArgumentException('duplicate zip entry: ' . $normalized);
+                }
+                $seen[$portableKey] = true;
+                $opsys = 0;
+                $attributes = 0;
+                if ($zip->getExternalAttributesIndex($i, $opsys, $attributes)
+                    && (($attributes >> 16) & 0170000) === 0120000) {
+                    throw new InvalidArgumentException('symbolic-link zip entry is not allowed: ' . $entry);
+                }
+                if (!str_ends_with($entry, '/')) {
+                    $files++;
+                    $stat = $zip->statIndex($i);
+                    if ($stat === false) {
+                        throw new InvalidArgumentException('cannot inspect zip entry: ' . $entry);
+                    }
+                    $uncompressedBytes += max(0, (int)($stat['size'] ?? 0));
+                    if ($files > self::MAX_FILES) {
+                        throw new InvalidArgumentException('zip archive exceeds the ' . self::MAX_FILES . ' file limit');
+                    }
+                    if ($uncompressedBytes > self::MAX_UNCOMPRESSED_BYTES) {
+                        throw new InvalidArgumentException('zip archive exceeds the 2 GiB uncompressed limit');
+                    }
+                    if (in_array($entry, ['index.php', 'index.html', 'index.htm'], true)) {
+                        $hasIndex = true;
+                    }
+                }
+            }
+        } finally {
+            $zip->close();
+        }
+        if ($files === 0) {
+            throw new InvalidArgumentException('zip archive contains no files');
+        }
+        if ($requireIndex && !$hasIndex) {
+            throw new InvalidArgumentException('zip archive has no root index.php, index.html, or index.htm');
+        }
+        $bytes = filesize($zipPath);
+        $sha = hash_file('sha256', $zipPath);
+        if ($bytes === false || $sha === false) {
+            throw new RuntimeException('cannot checksum zip archive');
+        }
+        return ['files' => $files, 'bytes' => (int)$bytes, 'sha256' => $sha, 'hasIndex' => $hasIndex];
+    }
+
+    /** @return array{files:int,bytes:int,sha256:string,hasIndex:bool} */
+    public static function pack(string $sourceDir, string $zipPath, bool $overwrite = false): array
+    {
+        $source = realpath($sourceDir);
+        if ($source === false || !is_dir($source)) {
+            throw new InvalidArgumentException('landing source directory not found: ' . $sourceDir);
+        }
+        $outputParent = realpath(dirname($zipPath));
+        if ($outputParent === false || !is_dir($outputParent)) {
+            throw new InvalidArgumentException('zip output directory not found: ' . dirname($zipPath));
+        }
+        $output = $outputParent . DIRECTORY_SEPARATOR . basename($zipPath);
+        $zip = new ZipArchive();
+        $flags = ZipArchive::CREATE | ($overwrite ? ZipArchive::OVERWRITE : ZipArchive::EXCL);
+        if ($zip->open($output, $flags) !== true) {
+            throw new RuntimeException('cannot create zip archive: ' . $zipPath);
+        }
+        $open = true;
+        try {
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::LEAVES_ONLY
+            );
+            foreach ($it as $file) {
+                if (!$file->isFile() || $file->isLink()) {
+                    continue;
+                }
+                $real = $file->getRealPath();
+                if ($real === false || $real === $output) {
+                    continue;
+                }
+                if (!str_starts_with($real, $source . DIRECTORY_SEPARATOR)) {
+                    throw new RuntimeException('source file escapes the landing directory: ' . $real);
+                }
+                $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($real, strlen($source) + 1));
+                if (basename($relative) === '.DS_Store' || str_starts_with($relative, '__MACOSX/')) {
+                    continue;
+                }
+                if (!$zip->addFile($real, $relative)) {
+                    throw new RuntimeException('cannot add file to zip: ' . $relative);
+                }
+            }
+            if (!$zip->close()) {
+                throw new RuntimeException('cannot finalize zip archive: ' . $zipPath);
+            }
+            $open = false;
+            return self::inspect($output);
+        } catch (Throwable $e) {
+            if ($open) {
+                @$zip->close();
+            }
+            @unlink($output);
+            throw $e;
+        }
+    }
+}
+
 /**
  * Filesystem operations on the landings cache directory. The base directory is injected so the
  * same code runs against the real cache in production and a temp directory under test. Every
@@ -100,7 +233,8 @@ final class LandingLibrary
         }
         $out = [];
         foreach ($items as $item) {
-            if ($item === '.' || $item === '..' || $item === '.gitkeep') {
+            if ($item === '.' || $item === '..' || $item === '.gitkeep'
+                || str_starts_with($item, '.ytds_replace_') || str_starts_with($item, '.ytds_backup_')) {
                 continue;
             }
             if (is_dir($this->baseDir . DIRECTORY_SEPARATOR . $item)) {
@@ -193,21 +327,11 @@ final class LandingLibrary
         if ($this->exists($name)) {
             return 'landing already exists: ' . $name;
         }
-        if (!is_file($zipPath)) {
-            return 'zip file is not readable';
+        try {
+            LandingArchive::inspect($zipPath, false);
+        } catch (Throwable $e) {
+            return $e->getMessage();
         }
-        $zip = new ZipArchive();
-        if ($zip->open($zipPath) !== true) {
-            return 'cannot open zip archive';
-        }
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $entry = str_replace('\\', '/', (string)$zip->getNameIndex($i));
-            if ($entry === '' || str_starts_with($entry, '/') || preg_match('#(^|/)\.\.(/|$)#', $entry) === 1) {
-                $zip->close();
-                return 'unsafe zip entry: ' . $entry;
-            }
-        }
-        $zip->close();
         return null;
     }
 
@@ -235,7 +359,104 @@ final class LandingLibrary
             $this->removeTree($dir);
             return 'extraction failed';
         }
+        if (!$this->validateExtractedTree($dir)) {
+            $this->removeTree($dir);
+            return 'extracted landing contains an unsafe path or symbolic link';
+        }
         return null;
+    }
+
+    /** @return array{files:int,bytes:int,sha256:string,hasIndex:bool} */
+    public function archive(string $name, string $zipPath): array
+    {
+        if (!$this->exists($name)) {
+            throw new InvalidArgumentException('landing not found: ' . $name);
+        }
+        return LandingArchive::pack($this->pathOf($name), $zipPath, true);
+    }
+
+    /** Resolves an existing regular file without allowing traversal or symlink hops. */
+    public function editableFile(string $name, string $relative): string
+    {
+        if (!$this->exists($name)) {
+            throw new InvalidArgumentException('landing not found: ' . $name);
+        }
+        $relative = str_replace('\\', '/', trim($relative));
+        if ($relative === '' || str_starts_with($relative, '/') || preg_match('#(^|/)\.\.(/|$)#', $relative) === 1) {
+            throw new InvalidArgumentException('invalid landing file path: ' . $relative);
+        }
+        $landing = realpath($this->pathOf($name));
+        $path = realpath($this->pathOf($name) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative));
+        if ($landing === false || $path === false || !is_file($path) || is_link($path)
+            || !str_starts_with($path, $landing . DIRECTORY_SEPARATOR)) {
+            throw new InvalidArgumentException('landing file not found: ' . $relative);
+        }
+        $cursor = $landing;
+        foreach (explode('/', $relative) as $part) {
+            $cursor .= DIRECTORY_SEPARATOR . $part;
+            if (is_link($cursor)) {
+                throw new InvalidArgumentException('landing file path contains a symlink: ' . $relative);
+            }
+        }
+        return $path;
+    }
+
+    public function writeFileAtomic(string $path, string $content): void
+    {
+        $tmp = tempnam(dirname($path), '.ytds_edit_');
+        if ($tmp === false || file_put_contents($tmp, $content, LOCK_EX) === false) {
+            if ($tmp !== false) {
+                @unlink($tmp);
+            }
+            throw new RuntimeException('cannot write temporary landing file');
+        }
+        @chmod($tmp, (int)(fileperms($path) & 0777));
+        if (!@rename($tmp, $path)) {
+            @unlink($tmp);
+            throw new RuntimeException('cannot replace landing file atomically');
+        }
+    }
+
+    /** @return array{files:int,bytes:int,sha256:string,hasIndex:bool} */
+    public function replaceZip(string $name, string $zipPath): array
+    {
+        if (!$this->exists($name)) {
+            throw new InvalidArgumentException('landing not found: ' . $name);
+        }
+        $meta = LandingArchive::inspect($zipPath);
+        $target = $this->pathOf($name);
+        $suffix = bin2hex(random_bytes(6));
+        $staging = $this->baseDir . DIRECTORY_SEPARATOR . '.ytds_replace_' . $suffix;
+        $backup = $this->baseDir . DIRECTORY_SEPARATOR . '.ytds_backup_' . $suffix;
+        if (!@mkdir($staging, 0755, true)) {
+            throw new RuntimeException('cannot create replacement staging folder');
+        }
+        $zip = new ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            $this->removeTree($staging);
+            throw new RuntimeException('cannot open replacement archive');
+        }
+        $extracted = $zip->extractTo($staging);
+        $zip->close();
+        if (!$extracted) {
+            $this->removeTree($staging);
+            throw new RuntimeException('replacement extraction failed');
+        }
+        if (!$this->validateExtractedTree($staging)) {
+            $this->removeTree($staging);
+            throw new RuntimeException('replacement contains an unsafe extracted path or symbolic link');
+        }
+        if (!@rename($target, $backup)) {
+            $this->removeTree($staging);
+            throw new RuntimeException('cannot stage existing landing for replacement');
+        }
+        if (!@rename($staging, $target)) {
+            @rename($backup, $target);
+            $this->removeTree($staging);
+            throw new RuntimeException('cannot install replacement landing');
+        }
+        $meta['cleanup_pending'] = !$this->removeTree($backup);
+        return $meta;
     }
 
     private function pathOf(string $name): string
@@ -258,6 +479,33 @@ final class LandingLibrary
         $parent = realpath(dirname($path));
         return $parent !== false
             && ($parent === $base || str_starts_with($parent, $base . DIRECTORY_SEPARATOR));
+    }
+
+    /** Defense in depth after ZipArchive::extractTo(): every resulting path stays in root. */
+    private function validateExtractedTree(string $dir): bool
+    {
+        $root = realpath($dir);
+        if ($root === false) {
+            return false;
+        }
+        try {
+            $it = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::SELF_FIRST
+            );
+            foreach ($it as $entry) {
+                if ($entry->isLink()) {
+                    return false;
+                }
+                $real = $entry->getRealPath();
+                if ($real === false || !str_starts_with($real, $root . DIRECTORY_SEPARATOR)) {
+                    return false;
+                }
+            }
+        } catch (Throwable $e) {
+            return false;
+        }
+        return true;
     }
 
     private function removeTree(string $dir): bool

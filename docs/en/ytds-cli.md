@@ -85,6 +85,7 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 | `stats --campaign <id>` | aggregate metrics for a date window; `--from`/`--to` in `DD.MM.YY`, `--columns`, `--groupby` (including `network`) |
 | `clicks --campaign <id>` | recent clicks (narrow columns include frozen `network_id`/`network`); `--view allowed\|blocked\|leads\|trafficback`, `--from`/`--to`, `--limit`, `--page`, `--sort <field>` (including `network` and `param.KEY`), `--dir asc\|desc`, repeatable `--filter field:op:value` (`network` values are ids) with `--filter-cond and\|or`, repeatable `--param KEY`, `--search <term>`, `--full` |
 | `landing list` | landing folders with metadata |
+| `landing download <name> --out <file.zip>` | stream one landing from local/STG/prod into a newly created, verified ZIP |
 | `networks list` | global Networks library (`common.settings`) |
 | `destinations list` | global Destinations with their network resolved into an effective URL |
 | `version` | instance `version.txt` and PHP version |
@@ -105,10 +106,35 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 | `networks add\|update\|delete [<id>]` | manage the global Networks library (`--name`, `--params`) |
 | `destinations add\|update\|delete [<id>]` | manage the global Destinations library (`--name`, `--base-url`, `--network <id>`) |
 | `landing upload <name> --zip <file>` | extract a ZIP into a new landing folder (rejects `../` and absolute entries) |
+| `landing edit <name> --file <relative-path> --apply <manifest.json>` | apply exact counted replacements to an existing file; dry run reports before/after SHA-256 and match counts |
+| `landing replace <name> --zip <file>` | atomically replace an existing landing from a verified root-index ZIP |
 | `landing duplicate <from> <to>` | copy a landing folder to a new name |
 | `landing delete <name>` | delete a landing folder; dry run first lists the campaigns that reference it |
 
 `patch` runs the same uniqueness, event, conversion, postback, CAPI, and flow validators as a panel save, then a recursive merge. It is the general tool for `{link:N}`, folder, and step edits: supply the complete section as the fragment, exactly as the panel would post it. An empty object or a JSON array is refused (it would wipe the settings).
+
+`landing edit` is intentionally generic rather than containing offer-specific delay or checkout logic. Its manifest is an object with 1–100 exact replacements, applied in order:
+
+```json
+{
+  "replacements": [
+    {"search": "delaySeconds = 10", "replace": "delaySeconds = 3598", "expected": 1},
+    {"search": "href=\"https://checkout.example\"", "replace": "href=\"{link:1}\"", "expected": 3},
+    {"search": "</body>", "replace": "<script>ytdsEvent('cta_visible')</script></body>", "expected": 1}
+  ]
+}
+```
+
+Every `search` must occur exactly `expected` times in the current file or the entire operation fails with `REPLACEMENT_COUNT_MISMATCH` and writes nothing. This primitive can change text or scripts, alter a VSL delay, replace checkout `href`s, or insert `ytdsEvent()`/`ytdsConversion()` calls without introducing a separate one-off command. Files are capped at 20 MiB and committed through an atomic same-directory rename.
+
+### Local ZIP utilities
+
+| Command | Description |
+|---|---|
+| `landing pack <directory> --out <file.zip>` | create a root-content ZIP, excluding `.DS_Store`, `__MACOSX`, symlinks, and the output itself |
+| `landing verify --zip <file.zip>` | reject unreadable, empty, duplicate, traversal, absolute, symlink, root-index-less, over-20,000-file, or over-2-GiB-uncompressed archives; return file count, bytes, and SHA-256 |
+
+`pack` and `verify` are local-only and do not need a database. `download` and `pack` atomically refuse to overwrite an existing output path. Upload/replace also re-check the extracted tree before exposing it. A committed replacement reports `cleanup_pending=true` instead of falsely reporting that the swap failed if only deletion of its hidden backup remains pending; internal `.ytds_replace_*`/`.ytds_backup_*` folders never appear in `landing list`.
 
 ### Authoring
 

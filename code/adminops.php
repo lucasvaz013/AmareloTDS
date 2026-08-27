@@ -545,6 +545,127 @@ final class AdminOps
     }
 
     /** @return array<string, mixed> */
+    public function landingDownload(string $landingsDir, string $name, string $zipPath, bool $overwrite = true): array
+    {
+        $lib = new LandingLibrary($landingsDir);
+        if (!$lib->exists($name)) {
+            throw new YtdsOpError('LANDING_NOT_FOUND', 404, 'landing not found: ' . $name, 'ytds landing list');
+        }
+        try {
+            $meta = $overwrite
+                ? $lib->archive($name, $zipPath)
+                : LandingArchive::pack($landingsDir . DIRECTORY_SEPARATOR . $name, $zipPath);
+        } catch (InvalidArgumentException $e) {
+            throw new YtdsOpError('INVALID_ARG', 400, $e->getMessage(), '');
+        } catch (Throwable $e) {
+            throw new YtdsOpError('WRITE_FAILED', 500, $e->getMessage(), '');
+        }
+        return ['action' => 'landing.download', 'name' => $name] + $meta;
+    }
+
+    /**
+     * Applies exact, counted substitutions to one existing landing file. This single primitive
+     * covers text/script insertion, delay changes, href changes, ytdsEvent(), and ytdsConversion().
+     * @param array<int, mixed> $replacements
+     * @return array<string, mixed>
+     */
+    public function landingEdit(string $landingsDir, string $name, string $file, array $replacements, bool $commit): array
+    {
+        $lib = new LandingLibrary($landingsDir);
+        if (!$lib->exists($name)) {
+            throw new YtdsOpError('LANDING_NOT_FOUND', 404, 'landing not found: ' . $name, 'ytds landing list');
+        }
+        if ($replacements === [] || count($replacements) > 100) {
+            throw new YtdsOpError('INVALID_ARG', 400, 'replacements must contain between 1 and 100 entries', '');
+        }
+        try {
+            $path = $lib->editableFile($name, $file);
+        } catch (InvalidArgumentException $e) {
+            throw new YtdsOpError('INVALID_ARG', 400, $e->getMessage(), '');
+        }
+        $before = file_get_contents($path);
+        if ($before === false) {
+            throw new YtdsOpError('WRITE_FAILED', 500, 'cannot read landing file: ' . $file, '');
+        }
+        if (strlen($before) > 20 * 1024 * 1024) {
+            throw new YtdsOpError('INVALID_ARG', 400, 'landing file exceeds the 20 MiB edit limit', 'replace the whole landing ZIP instead');
+        }
+        $after = $before;
+        $counts = [];
+        foreach ($replacements as $index => $replacement) {
+            if (!is_array($replacement) || !array_key_exists('search', $replacement) || !array_key_exists('replace', $replacement)) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'replacement ' . ($index + 1) . ' needs search and replace strings', '');
+            }
+            $search = $replacement['search'];
+            $replace = $replacement['replace'];
+            $expected = $replacement['expected'] ?? 1;
+            if (!is_string($search) || $search === '' || !is_string($replace) || !is_int($expected) || $expected < 1) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'replacement ' . ($index + 1) . ' has invalid search, replace, or expected', '');
+            }
+            $actual = substr_count($after, $search);
+            if ($actual !== $expected) {
+                throw new YtdsOpError(
+                    'REPLACEMENT_COUNT_MISMATCH',
+                    409,
+                    'replacement ' . ($index + 1) . ' expected ' . $expected . ' matches, found ' . $actual,
+                    'download the current landing and update the exact search anchor'
+                );
+            }
+            $after = str_replace($search, $replace, $after);
+            $counts[] = ['index' => $index + 1, 'expected' => $expected, 'actual' => $actual];
+        }
+        $result = [
+            'dry_run' => !$commit,
+            'action' => 'landing.edit',
+            'name' => $name,
+            'file' => str_replace('\\', '/', $file),
+            'before_sha256' => hash('sha256', $before),
+            'after_sha256' => hash('sha256', $after),
+            'replacements' => $counts,
+        ];
+        if ($commit) {
+            try {
+                $lib->writeFileAtomic($path, $after);
+            } catch (Throwable $e) {
+                throw new YtdsOpError('WRITE_FAILED', 500, $e->getMessage(), '');
+            }
+        }
+        return $result;
+    }
+
+    /** @return array<string, mixed> */
+    public function landingReplace(string $landingsDir, string $name, string $zipPath, bool $commit): array
+    {
+        $lib = new LandingLibrary($landingsDir);
+        if (!$lib->exists($name)) {
+            throw new YtdsOpError('LANDING_NOT_FOUND', 404, 'landing not found: ' . $name, 'ytds landing list');
+        }
+        try {
+            $archive = LandingArchive::inspect($zipPath);
+        } catch (InvalidArgumentException $e) {
+            throw new YtdsOpError('INVALID_ARG', 400, $e->getMessage(), 'ytds landing verify --zip ' . $zipPath);
+        }
+        $before = $lib->describe($name);
+        if (!$commit) {
+            return ['dry_run' => true, 'action' => 'landing.replace', 'name' => $name, 'before' => $before, 'archive' => $archive];
+        }
+        try {
+            $installed = $lib->replaceZip($name, $zipPath);
+        } catch (Throwable $e) {
+            throw new YtdsOpError('WRITE_FAILED', 500, $e->getMessage(), '');
+        }
+        return [
+            'dry_run' => false,
+            'action' => 'landing.replace',
+            'name' => $name,
+            'before' => $before,
+            'landing' => $lib->describe($name),
+            'archive' => $archive,
+            'cleanup_pending' => (bool)($installed['cleanup_pending'] ?? false),
+        ];
+    }
+
+    /** @return array<string, mixed> */
     public function landingDuplicate(string $landingsDir, string $from, string $to, bool $commit): array
     {
         $lib = new LandingLibrary($landingsDir);

@@ -2,7 +2,7 @@
 
 The admin API is a small JSON endpoint for operating an instance remotely: reading campaigns and reports and making safe mutations. It backs the remote mode of the [ytds CLI](ytds-cli.md).
 
-It lives at `api/admin.php`, deliberately outside the renamed hex admin path, so a client can reach it with only a token — it never needs to know the secret panel path. It returns JSON only and never returns the admin token, password, or admin path.
+It lives at `api/admin.php`, deliberately outside the renamed hex admin path, so a client can reach it with only a token — it never needs to know the secret panel path. Responses are JSON except for the authenticated `landing.download` ZIP stream; neither form returns the admin token, password, or admin path.
 
 ## Enabling and authentication
 
@@ -21,7 +21,7 @@ A missing or wrong token returns `401` with `{"code":"AUTH_INVALID"}`. The compa
 - **Reads use `GET`.** They are safe and idempotent.
 - **Mutations use `POST`.** A mutation issued as `GET` is refused with `405`, so a write can never happen through a safe verb.
 
-Parameters travel in the query string in both cases. Two actions also read a `POST` body: `campaign.patch` and `campaign.set` take a JSON body, and `landing.upload` takes the raw ZIP bytes.
+Parameters travel in the query string in both cases. `campaign.patch`, `campaign.set`, and `landing.edit` take JSON bodies; `landing.upload` and `landing.replace` take raw ZIP bytes.
 
 ## Response shape
 
@@ -46,6 +46,7 @@ Selected with the `action` query parameter.
 | `stats` | `campaign`, optional `from`, `to`, `columns`, `groupby` | aggregate metrics for the window |
 | `clicks` | `campaign` (except `view=trafficback`), optional `view`, `from`, `to`, `limit`, `page`, `sort`, `dir`, `filter[]` (`field:op:value`), `filter-cond`, `param[]`, `search`, `full` | recent clicks, including frozen Checkout Route Network fields, filtered/sorted/paginated |
 | `landing.list` | — | landing folders |
+| `landing.download` | `name` | streamed `application/zip`; headers include `X-YTDS-SHA256` and `X-YTDS-Files` |
 | `networks.list` | — | global Networks library |
 | `destinations.list` | — | global destinations with resolved effective URLs |
 
@@ -66,6 +67,8 @@ Every mutation is a dry run unless `commit=1` is passed. A dry run validates and
 | `networks.add` / `.update` / `.delete` | `name`/`params`, or `id` (+ optional fields) | manage the global Networks library |
 | `destinations.add` / `.update` / `.delete` | `name`/`base_url`/`network_id`, or `id` | manage the global Destinations library |
 | `landing.upload` | `name`, `commit`; ZIP bytes as the POST body | extract a ZIP into a new landing folder (zip-slip guarded) |
+| `landing.edit` | `name`, `file`, `commit`; JSON body with `replacements[]` | exact counted substitutions; atomic file write, dry run by default |
+| `landing.replace` | `name`, `commit`; ZIP bytes as the POST body | atomically replace an existing landing after root-index/archive/extracted-tree verification; committed response includes `cleanup_pending` |
 | `landing.duplicate` | `from`, `to`, `commit` | copy a landing folder |
 | `landing.delete` | `name`, `commit` | delete a landing folder (dry run lists referencing campaigns) |
 

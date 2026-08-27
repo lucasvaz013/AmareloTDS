@@ -110,6 +110,30 @@ function ytds_admin_api_run_action(AdminOps $ops, string $action, array $query, 
                 @unlink($tmp);
             }
 
+        case 'landing.edit':
+            $decoded = json_decode($body, true);
+            if (!is_array($decoded) || !is_array($decoded['replacements'] ?? null)) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'landing.edit requires a JSON object with replacements', 'POST {"replacements":[{"search":"old","replace":"new","expected":1}]}');
+            }
+            return $ops->landingEdit(
+                ytds_admin_api_landings_dir($codeDir),
+                (string)($query['name'] ?? ''),
+                (string)($query['file'] ?? ''),
+                $decoded['replacements'],
+                ytds_admin_api_flag($query, 'commit')
+            );
+
+        case 'landing.replace':
+            $tmp = tempnam(sys_get_temp_dir(), 'ytds_zip_');
+            if ($tmp === false || file_put_contents($tmp, $body) === false) {
+                throw new YtdsOpError('WRITE_FAILED', 500, 'could not buffer replacement zip', '');
+            }
+            try {
+                return $ops->landingReplace(ytds_admin_api_landings_dir($codeDir), (string)($query['name'] ?? ''), $tmp, ytds_admin_api_flag($query, 'commit'));
+            } finally {
+                @unlink($tmp);
+            }
+
         case 'landing.duplicate':
             return $ops->landingDuplicate(ytds_admin_api_landings_dir($codeDir), (string)($query['from'] ?? ''), (string)($query['to'] ?? ''), ytds_admin_api_flag($query, 'commit'));
 
@@ -265,7 +289,7 @@ function ytds_admin_api_flag(array $query, string $key): bool
 /** Write actions mutate state and must be POSTed (GET stays safe/idempotent). */
 function ytds_admin_api_is_write(string $action): bool
 {
-    return in_array($action, ['campaign.create', 'campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'campaign.patch', 'campaign.set', 'campaign.kill-defaults', 'networks.add', 'networks.update', 'networks.delete', 'destinations.add', 'destinations.update', 'destinations.delete', 'landing.upload', 'landing.duplicate', 'landing.delete'], true);
+    return in_array($action, ['campaign.create', 'campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'campaign.patch', 'campaign.set', 'campaign.kill-defaults', 'networks.add', 'networks.update', 'networks.delete', 'destinations.add', 'destinations.update', 'destinations.delete', 'landing.upload', 'landing.edit', 'landing.replace', 'landing.duplicate', 'landing.delete'], true);
 }
 
 /** Resolves the landings cache directory, falling back to the unresolved path when it does not exist yet. */
@@ -297,8 +321,37 @@ function amarelotds_run_admin_api(Db $db): never
     if (ytds_admin_api_is_write($action) && $method !== 'POST') {
         ytds_admin_api_respond(405, ['code' => 'METHOD_NOT_ALLOWED', 'message' => 'mutation requires POST: ' . $action, 'hint' => 'POST with commit=1 to apply; omit commit for a dry-run']);
     }
+    if ($action === 'landing.download') {
+        ytds_admin_api_download_landing($db, __DIR__ . '/..', (string)($_GET['name'] ?? ''));
+    }
     $result = ytds_admin_api_dispatch($db, $action, $_GET, __DIR__ . '/..', (string)file_get_contents('php://input'));
     ytds_admin_api_respond($result['status'], $result['body']);
+}
+
+function ytds_admin_api_download_landing(Db $db, string $codeDir, string $name): never
+{
+    $tmp = tempnam(sys_get_temp_dir(), 'ytds_download_');
+    if ($tmp === false) {
+        ytds_admin_api_respond(500, ['code' => 'WRITE_FAILED', 'message' => 'cannot create download buffer', 'hint' => '']);
+    }
+    try {
+        $result = (new AdminOps($db))->landingDownload(ytds_admin_api_landings_dir($codeDir), $name, $tmp);
+    } catch (YtdsOpError $e) {
+        @unlink($tmp);
+        ytds_admin_api_respond($e->httpStatus, ['code' => $e->errorCode, 'message' => $e->getMessage(), 'hint' => $e->hint]);
+    } catch (Throwable $e) {
+        @unlink($tmp);
+        ytds_admin_api_respond(500, ['code' => 'INTERNAL', 'message' => get_class($e) . ': ' . $e->getMessage(), 'hint' => '']);
+    }
+    header_remove('Content-Type');
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $name . '.zip"');
+    header('Content-Length: ' . $result['bytes']);
+    header('X-YTDS-SHA256: ' . $result['sha256']);
+    header('X-YTDS-Files: ' . $result['files']);
+    readfile($tmp);
+    @unlink($tmp);
+    exit;
 }
 
 /**

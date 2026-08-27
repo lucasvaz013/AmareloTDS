@@ -113,7 +113,7 @@ final class AdminApiTest extends TestCase
 
     public function testIsWriteActionClassification(): void
     {
-        foreach (['campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains'] as $w) {
+        foreach (['campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'landing.edit', 'landing.replace'] as $w) {
             $this->assertTrue(ytds_admin_api_is_write($w), $w);
         }
         foreach (['version', 'campaigns.list', 'campaign.get', 'stats', 'destinations.list'] as $r) {
@@ -218,5 +218,12 @@ final class AdminApiTest extends TestCase
         $res = ytds_admin_api_dispatch($this->db, 'landing.delete', ['name' => 'zzz_nonexistent_' . uniqid()], $this->codeDir);
         $this->assertSame(404, $res['status']);
         $this->assertSame('LANDING_NOT_FOUND', $res['body']['code']);
+    }
+
+    public function testDispatchLandingEditRequiresReplacementManifest(): void
+    {
+        $res = ytds_admin_api_dispatch($this->db, 'landing.edit', ['name' => 'x', 'file' => 'index.html'], $this->codeDir, '{}');
+        $this->assertSame(400, $res['status']);
+        $this->assertSame('INVALID_ARG', $res['body']['code']);
     }
 }

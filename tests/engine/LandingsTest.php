@@ -179,6 +179,109 @@ final class LandingsTest extends TestCase
         self::assertSame('y', file_get_contents($this->baseDir . '/taken/index.html'));
     }
 
+    public function testArchivePackAndInspectRoundTrip(): void
+    {
+        $source = $this->baseDir . '/source';
+        mkdir($source . '/assets', 0755, true);
+        file_put_contents($source . '/index.html', '<h1>page</h1>');
+        file_put_contents($source . '/assets/app.js', 'console.log(1)');
+        file_put_contents($source . '/.DS_Store', 'ignored');
+        $archive = $this->baseDir . '/page.zip';
+
+        $packed = LandingArchive::pack($source, $archive);
+        $inspected = LandingArchive::inspect($archive);
+
+        self::assertSame(2, $packed['files']);
+        self::assertSame($packed, $inspected);
+        self::assertSame(hash_file('sha256', $archive), $inspected['sha256']);
+        self::assertTrue($inspected['hasIndex']);
+    }
+
+    public function testArchivePackRefusesToOverwriteExistingOutput(): void
+    {
+        $source = $this->baseDir . '/source';
+        mkdir($source, 0755, true);
+        file_put_contents($source . '/index.html', 'new');
+        $archive = $this->baseDir . '/existing.zip';
+        file_put_contents($archive, 'keep');
+
+        try {
+            LandingArchive::pack($source, $archive);
+            self::fail('existing output should not be overwritten');
+        } catch (RuntimeException $e) {
+            self::assertStringContainsString('cannot create zip archive', $e->getMessage());
+        }
+        self::assertSame('keep', file_get_contents($archive));
+    }
+
+    public function testArchiveInspectRejectsZipSlipAndMissingRootIndex(): void
+    {
+        $unsafe = $this->baseDir . '/unsafe.zip';
+        $zip = new ZipArchive();
+        $zip->open($unsafe, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->addFromString('../escape.txt', 'x');
+        $zip->close();
+
+        try {
+            LandingArchive::inspect($unsafe);
+            self::fail('unsafe archive should fail');
+        } catch (InvalidArgumentException $e) {
+            self::assertStringContainsString('unsafe zip entry', $e->getMessage());
+        }
+
+        $missing = $this->baseDir . '/missing-index.zip';
+        $zip = new ZipArchive();
+        $zip->open($missing, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->addFromString('nested/index.html', 'x');
+        $zip->close();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('root index');
+        LandingArchive::inspect($missing);
+    }
+
+    public function testArchiveInspectRejectsSymbolicLinkEntry(): void
+    {
+        $archive = $this->baseDir . '/symlink.zip';
+        $zip = new ZipArchive();
+        $zip->open($archive, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+        $zip->addFromString('index.html', 'x');
+        $zip->addFromString('escape-link', '../../outside');
+        $zip->setExternalAttributesName('escape-link', ZipArchive::OPSYS_UNIX, 0120777 << 16);
+        $zip->close();
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('symbolic-link');
+        LandingArchive::inspect($archive);
+    }
+
+    public function testEditableFileRejectsTraversalAndSymlink(): void
+    {
+        $this->makeLanding('editable', ['index.html' => 'ok']);
+        $outside = $this->baseDir . '/outside.html';
+        file_put_contents($outside, 'outside');
+        symlink($outside, $this->baseDir . '/editable/link.html');
+        $lib = new LandingLibrary($this->baseDir);
+
+        foreach (['../outside.html', 'link.html'] as $relative) {
+            try {
+                $lib->editableFile('editable', $relative);
+                self::fail('unsafe editable path should fail: ' . $relative);
+            } catch (InvalidArgumentException $e) {
+                self::assertNotSame('', $e->getMessage());
+            }
+        }
+    }
+
+    public function testAllHidesInternalReplacementFolders(): void
+    {
+        $this->makeLanding('real', ['index.html' => 'ok']);
+        $this->makeLanding('.ytds_replace_deadbeef', ['index.html' => 'staging']);
+        $this->makeLanding('.ytds_backup_deadbeef', ['index.html' => 'backup']);
+
+        self::assertSame(['real'], array_column((new LandingLibrary($this->baseDir))->all(), 'name'));
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────────────
 
     /** @param array<string, string> $files relative path => content */

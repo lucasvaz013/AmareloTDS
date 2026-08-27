@@ -568,6 +568,54 @@ final class YtdsCliContractTest extends TestCase
         $this->assertErrorContract($this->runCli(['landing', 'delete', 'zzz_nonexistent_test_landing', '--db', $this->dbPath]), 3, 'LANDING_NOT_FOUND');
     }
 
+    public function testLandingEditRequiresFileAndManifest(): void
+    {
+        $this->assertErrorContract($this->runCli(['landing', 'edit', 'promo', '--db', $this->dbPath]), 2, 'INVALID_ARG');
+    }
+
+    public function testLandingDownloadLocalIncludesOutputAndRefusesOverwrite(): void
+    {
+        $name = 'ytds_cli_download_' . uniqid();
+        $dir = dirname(__DIR__, 2) . '/code/caching/landings/' . $name;
+        $output = sys_get_temp_dir() . '/ytds_cli_download_' . uniqid() . '.zip';
+        mkdir($dir, 0755, true);
+        file_put_contents($dir . '/index.html', 'fixture');
+        try {
+            $payload = $this->assertCleanJson($this->runCli([
+                'landing', 'download', $name, '--out', $output, '--db', $this->dbPath,
+            ]));
+            $this->assertSame(realpath($output), $payload['output']);
+            $this->assertSame('landing.download', $payload['action']);
+
+            $this->assertErrorContract($this->runCli([
+                'landing', 'download', $name, '--out', $output, '--db', $this->dbPath,
+            ]), 2, 'INVALID_ARG');
+        } finally {
+            @unlink($dir . '/index.html');
+            @rmdir($dir);
+            @unlink($output);
+        }
+    }
+
+    public function testLandingPackAndVerifyWithoutDatabase(): void
+    {
+        $source = sys_get_temp_dir() . '/ytds_pack_' . uniqid();
+        mkdir($source, 0755, true);
+        file_put_contents($source . '/index.html', '<h1>x</h1>');
+        $zip = sys_get_temp_dir() . '/ytds_pack_' . uniqid() . '.zip';
+
+        $packed = $this->assertCleanJson($this->runCli(['landing', 'pack', $source, '--out', $zip]));
+        $this->assertSame('landing.pack', $packed['action']);
+        $this->assertFileExists($zip);
+        $verified = $this->assertCleanJson($this->runCli(['landing', 'verify', '--zip', $zip]));
+        $this->assertSame('landing.verify', $verified['action']);
+        $this->assertSame($packed['sha256'], $verified['sha256']);
+
+        @unlink($source . '/index.html');
+        @rmdir($source);
+        @unlink($zip);
+    }
+
     public function testClicksFilterAndParamColumn(): void
     {
         $this->db->seedClicks([
