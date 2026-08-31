@@ -86,7 +86,15 @@ final class CampaignServiceTest extends TestCase
     {
         $settings = self::settingsWith(['a.example.com'], 1);
         $settings['apikey'] = 'SEEDED_APIKEY';
-        $settings['capi'] = ['enabled' => false, 'pixel_id' => '123', 'access_token' => 'SEEDED_TOKEN'];
+        $settings['capi'] = [
+            'enabled' => false,
+            'pixel_id' => '123',
+            'access_token' => 'SEEDED_TOKEN',
+            'pixels' => [
+                ['pixel_id' => '123', 'access_token' => 'SEEDED_TOKEN', 'test_event_code' => ''],
+                ['pixel_id' => '456', 'access_token' => 'SEEDED_TOKEN_2', 'test_event_code' => 'TEST2'],
+            ],
+        ];
         $settings['postback'] = ['pbkey' => ['enabled' => true, 'keys' => ['SEEDED_K1', 'SEEDED_K2']]];
         $this->db->seedCampaign(1, 'alpha', $settings);
 
@@ -94,6 +102,8 @@ final class CampaignServiceTest extends TestCase
 
         $this->assertSame(CampaignService::REDACTED_VALUE, $got['apikey']);
         $this->assertSame(CampaignService::REDACTED_VALUE, $got['capi']['access_token']);
+        $this->assertSame(CampaignService::REDACTED_VALUE, $got['capi']['pixels'][0]['access_token']);
+        $this->assertSame(CampaignService::REDACTED_VALUE, $got['capi']['pixels'][1]['access_token']);
         $this->assertSame(
             [CampaignService::REDACTED_VALUE, CampaignService::REDACTED_VALUE],
             $got['postback']['pbkey']['keys']
@@ -101,6 +111,8 @@ final class CampaignServiceTest extends TestCase
         $this->assertStringNotContainsString('SEEDED_', json_encode($got));
         // Non-secret neighbours untouched.
         $this->assertSame('123', $got['capi']['pixel_id']);
+        $this->assertSame('456', $got['capi']['pixels'][1]['pixel_id']);
+        $this->assertSame('TEST2', $got['capi']['pixels'][1]['test_event_code']);
         $this->assertTrue($got['postback']['pbkey']['enabled']);
         $this->assertSame(['a.example.com'], $got['domains']);
     }
@@ -114,5 +126,64 @@ final class CampaignServiceTest extends TestCase
         ];
 
         $this->assertSame($settings, CampaignService::redact($settings));
+    }
+
+    public function testPatchPersistsCompletePixelListAndLegacyMirror(): void
+    {
+        $settings = json_decode(
+            file_get_contents(__DIR__ . '/../../code/db/default.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR
+        );
+        $this->db->seedCampaign(1, 'alpha', $settings);
+        $capi = [
+            'enabled' => true,
+            'pixels' => [
+                ['pixel_id' => '111', 'access_token' => 'TOKEN_A', 'test_event_code' => ''],
+                ['pixel_id' => '222', 'access_token' => 'TOKEN_B', 'test_event_code' => 'TEST_B'],
+            ],
+            'map' => [['status' => 'Purchase', 'event_name' => 'Purchase']],
+        ];
+
+        $preview = $this->service->patch(1, ['capi' => $capi], false);
+        self::assertTrue($preview['dry_run']);
+        self::assertSame(['capi'], $preview['changed']);
+
+        $this->service->patch(1, ['capi' => $capi], true);
+        $stored = $this->db->get_campaign_runtime_rows()[0]['settings']['capi'];
+
+        self::assertCount(2, $stored['pixels']);
+        self::assertSame('111', $stored['pixel_id']);
+        self::assertSame('TOKEN_A', $stored['access_token']);
+        self::assertSame('222', $stored['pixels'][1]['pixel_id']);
+        self::assertSame('TOKEN_B', $stored['pixels'][1]['access_token']);
+    }
+
+    public function testLegacyCapiSetFieldKeepsPrimaryPixelMirrorInSync(): void
+    {
+        $settings = json_decode(
+            file_get_contents(__DIR__ . '/../../code/db/default.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR
+        );
+        $settings['capi'] = [
+            'enabled' => true,
+            'pixel_id' => '111',
+            'access_token' => 'TOKEN_OLD',
+            'test_event_code' => '',
+            'pixels' => [
+                ['pixel_id' => '111', 'access_token' => 'TOKEN_OLD', 'test_event_code' => ''],
+                ['pixel_id' => '222', 'access_token' => 'TOKEN_B', 'test_event_code' => ''],
+            ],
+            'map' => [['status' => 'Purchase', 'event_name' => 'Purchase']],
+        ];
+        $this->db->seedCampaign(1, 'alpha', $settings);
+
+        $this->service->setFields(1, ['capi.access_token' => 'TOKEN_NEW'], true);
+        $stored = $this->db->get_campaign_runtime_rows()[0]['settings']['capi'];
+
+        self::assertSame('TOKEN_NEW', $stored['access_token']);
+        self::assertSame('TOKEN_NEW', $stored['pixels'][0]['access_token']);
+        self::assertSame('TOKEN_B', $stored['pixels'][1]['access_token']);
     }
 }

@@ -118,6 +118,34 @@ final class CapiSendTest extends TestCase
         self::assertNotSame('', $response->error);
     }
 
+    public function testParallelPixelBatchKeepsSuccessAndFailureIndependent(): void
+    {
+        $settings = CapiSettings::fromArray([
+            'enabled' => true,
+            'pixels' => [
+                ['pixel_id' => '111', 'access_token' => 'TOKEN_A', 'test_event_code' => ''],
+                ['pixel_id' => '222', 'access_token' => 'TOKEN_B', 'test_event_code' => ''],
+            ],
+            'map' => [['status' => 'Purchase', 'event_name' => 'Purchase']],
+        ]);
+        $requests = CapiSender::buildRequests($settings, [$this->event()]);
+        $requests[0]->url = self::$baseUrl . '/events';
+        $requests[0]->verifyPeer = false;
+        $requests[0]->verifyHost = 0;
+        $requests[1]->url = self::$baseUrl . '/error';
+        $requests[1]->verifyPeer = false;
+        $requests[1]->verifyHost = 0;
+
+        $responses = HttpClient::sendParallel($requests);
+
+        self::assertCount(2, $responses);
+        self::assertTrue($responses['capi-conversion-0']->isOk());
+        self::assertFalse($responses['capi-conversion-1']->isOk());
+        self::assertSame(503, $responses['capi-conversion-1']->httpCode());
+        $received = json_decode((string)$responses['capi-conversion-0']->content, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame('Bearer TOKEN_A', $received['authorization']);
+    }
+
     /** @return array<string, mixed> */
     private function post(CapiSettings $settings): array
     {

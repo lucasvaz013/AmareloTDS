@@ -30,7 +30,7 @@ Parameters travel in the query string in both cases. `campaign.patch`, `campaign
 
 Codes match the CLI: `INVALID_ARG`/`UNKNOWN_ACTION`/`VALIDATION` (400), `AUTH_INVALID`/`API_DISABLED` (401/404), `CAMPAIGN_NOT_FOUND`/`SECTION_NOT_FOUND`/`NETWORK_NOT_FOUND`/`DESTINATION_NOT_FOUND`/`LANDING_NOT_FOUND` (404), `DOMAIN_CONFLICT`/`RESOURCE_IN_USE` (409), `METHOD_NOT_ALLOWED` (405), `WRITE_FAILED`/`INTERNAL` (500).
 
-Campaign settings are returned with secrets masked (`apikey`, CAPI access token, postback keys become `<redacted>`). Operational data such as clicks and destinations is returned in full to the authenticated caller.
+Campaign settings are returned with secrets masked (`apikey`, the legacy CAPI access token, every `capi.pixels[].access_token`, and postback keys become `<redacted>`). Operational data such as clicks and destinations is returned in full to the authenticated caller. CAPI supports at most 20 pixel objects; writes replace the supplied `pixels` list as a whole and mirror its first item into the legacy scalar fields.
 
 ## Actions
 

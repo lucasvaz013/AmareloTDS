@@ -7,6 +7,48 @@ require_once __DIR__ . '/../../code/campaignvalidation.php';
 
 final class CapiSettingsValidationTest extends TestCase
 {
+    public function testMultiplePixelsAreNormalizedAndFirstIsMirrored(): void
+    {
+        $input = $this->validInput();
+        $input['capi'] = [
+            'enabled' => true,
+            'pixels' => [
+                ['pixel_id' => ' 111 ', 'access_token' => ' TOKEN_A ', 'test_event_code' => ''],
+                ['pixel_id' => ' 222 ', 'access_token' => ' TOKEN_B ', 'test_event_code' => ' TEST_B '],
+            ],
+            'map' => [['status' => 'purchase', 'event_name' => 'Purchase']],
+        ];
+
+        self::assertNull(normalize_conversion_input($input));
+        self::assertNull(normalize_capi_input($input));
+        self::assertSame('111', $input['capi']['pixel_id']);
+        self::assertSame('TOKEN_A', $input['capi']['access_token']);
+        self::assertSame('', $input['capi']['test_event_code']);
+        self::assertSame([
+            ['pixel_id' => '111', 'access_token' => 'TOKEN_A', 'test_event_code' => ''],
+            ['pixel_id' => '222', 'access_token' => 'TOKEN_B', 'test_event_code' => 'TEST_B'],
+        ], $input['capi']['pixels']);
+    }
+
+    public function testBlankRowsDoNotCountAgainstTwentyPixelLimit(): void
+    {
+        $input = $this->validInput();
+        $pixels = [];
+        for ($index = 1; $index <= CapiSettings::MAX_PIXELS; $index++) {
+            $pixels[] = ['pixel_id' => (string)$index, 'access_token' => 'TOKEN_' . $index];
+        }
+        $pixels[] = ['pixel_id' => '', 'access_token' => '', 'test_event_code' => ''];
+        $input['capi'] = [
+            'enabled' => true,
+            'pixels' => $pixels,
+            'map' => [['status' => 'Purchase', 'event_name' => 'Purchase']],
+        ];
+
+        self::assertNull(normalize_conversion_input($input));
+        self::assertNull(normalize_capi_input($input));
+        self::assertCount(CapiSettings::MAX_PIXELS, $input['capi']['pixels']);
+    }
+
     public function testValidSettingsAreNormalized(): void
     {
         $input = $this->validInput();
@@ -29,6 +71,11 @@ final class CapiSettingsValidationTest extends TestCase
                 'pixel_id' => '1234567890',
                 'access_token' => 'EAAG-token',
                 'test_event_code' => 'TEST12345',
+                'pixels' => [[
+                    'pixel_id' => '1234567890',
+                    'access_token' => 'EAAG-token',
+                    'test_event_code' => 'TEST12345',
+                ]],
                 'map' => [
                     ['status' => 'Purchase', 'event_name' => 'Purchase'],
                     ['status' => 'Lead', 'event_name' => 'InitiateCheckout'],
@@ -142,6 +189,69 @@ final class CapiSettingsValidationTest extends TestCase
 
         self::assertNull(normalize_conversion_input($input));
         self::assertStringContainsString('at most', (string)normalize_capi_input($input));
+    }
+
+    public function testMoreThanTwentyPixelsAreRejected(): void
+    {
+        $input = $this->validInput();
+        $input['capi'] = [
+            'enabled' => true,
+            'pixels' => array_map(
+                static fn(int $id): array => [
+                    'pixel_id' => (string)(1000 + $id),
+                    'access_token' => 'TOKEN_' . $id,
+                    'test_event_code' => '',
+                ],
+                range(1, CapiSettings::MAX_PIXELS + 1)
+            ),
+            'map' => [['status' => 'Purchase', 'event_name' => 'Purchase']],
+        ];
+
+        self::assertNull(normalize_conversion_input($input));
+        self::assertStringContainsString('at most 20', (string)normalize_capi_input($input));
+    }
+
+    public function testDuplicatePixelIdsAreRejected(): void
+    {
+        $input = $this->validInput();
+        $input['capi'] = [
+            'enabled' => true,
+            'pixels' => [
+                ['pixel_id' => '111', 'access_token' => 'TOKEN_A'],
+                ['pixel_id' => '111', 'access_token' => 'TOKEN_B'],
+            ],
+            'map' => [['status' => 'Purchase', 'event_name' => 'Purchase']],
+        ];
+
+        self::assertNull(normalize_conversion_input($input));
+        self::assertStringContainsString('repeats pixel ID', (string)normalize_capi_input($input));
+    }
+
+    public function testDisabledCapiMayHaveNoPixels(): void
+    {
+        $input = $this->validInput();
+        $input['capi'] = ['enabled' => false, 'pixels' => [], 'map' => []];
+
+        self::assertNull(normalize_conversion_input($input));
+        self::assertNull(normalize_capi_input($input));
+        self::assertSame([], $input['capi']['pixels']);
+        self::assertSame('', $input['capi']['pixel_id']);
+    }
+
+    public function testUnknownApiVersionFieldsAreNotPersisted(): void
+    {
+        $input = $this->validInput();
+        $input['capi'] = [
+            'enabled' => false,
+            'pixels' => [],
+            'map' => [],
+            'api_version' => 'v99.0',
+            'graph_api_version' => 'v99.0',
+        ];
+
+        self::assertNull(normalize_capi_input($input));
+        self::assertArrayNotHasKey('api_version', $input['capi']);
+        self::assertArrayNotHasKey('graph_api_version', $input['capi']);
     }
 
     /** @return array<string, mixed> */

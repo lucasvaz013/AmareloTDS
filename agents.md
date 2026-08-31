@@ -284,7 +284,7 @@ Construídas neste fork (vivem em `staging`), com o design em plan docs commitad
 
 | Feature | O que faz | Entrada no código | Design |
 |---|---|---|---|
-| CAPI | Conversões server‑side p/ Meta | `code/capi.php` | `docs/en/meta-capi.md` |
+| CAPI | Conversões server‑side p/ até 20 pixels Meta por campanha | `code/capi.php` | `docs/en/meta-capi.md` |
 | Domains | Registra/aponta/provisiona domínios (Namecheap + Cloudflare + nginx) | `code/domains.php`, `code/cron/*_domains.php` | — |
 | Postback Gateway | Expõe somente `/api/postback.php` em domínio raiz, com DNS/nginx reconciliados | `code/postbackgateway.php` | `docs/en/postback-gateway.md` |
 | Integrations | Cofre + teste de saúde das credenciais externas | `code/integrations.php` | — |
@@ -315,7 +315,7 @@ Campo‑a‑campo em `docs/en/`; a campanha é achada pelo domínio.
 - **Landings** — pastas `caching/landings/<pasta>` (upload ZIP/editar/duplicar/excluir); modo `base` (nginx direto) ou `direct` (`/__dl/<clickid>/<step>/`).
 - **Conversions** — status (`Lead`/`Purchase`/`Reject`/`Trash` + custom com aliases); dedup por tid no namespace `(campanha, parâmetro, tid)` → **um** param de tid por postback; **Cap** é filtro de flow (não campo aqui), corte do dia pelo Campaign timezone. Atalhos sem postback: Form submission (`send.php`) e `ytdsConversion(status)`.
 - **Events** — micro‑interações por `clickid+step` (`click_steps.events`); **não** viram conversão/payout/CAPI. Custom: `^[a-z][a-z0-9_]{0,63}$`.
-- **Postback in / S2S out** — entrada `/api/postback.php?clickid=…&status=…&payout=…&tid=…` (key protection opcional); parceiro que rejeita subdomínio usa o Postback Gateway isolado (`docs/en/postback-gateway.md`); saída CAPI server‑side p/ Meta (`code/capi.php`, só Purchase/Lead mapeáveis, Purchase exige `payout>0`), **máx. 5** postbacks S2S.
+- **Postback in / S2S out** — entrada `/api/postback.php?clickid=…&status=…&payout=…&tid=…` (key protection opcional); parceiro que rejeita subdomínio usa o Postback Gateway isolado (`docs/en/postback-gateway.md`); saída CAPI server‑side p/ até 20 pixels Meta (mapa compartilhado; Purchase exige `payout>0`), **máx. 5** postbacks S2S.
 - **Integration / Connect** — PHP Connect por API key (`/api/phpconnect.php`, UA precisa conter `AmareloTDS` senão 404); JS Connect por domínio (`/js/`, domínio precisa estar em Domains). API key é `readonly`; vazou → duplicar campanha.
 - **Scripts** — Backfix, Next/Form‑Submit Redirect, lazy‑load. **Sem** campo de HTML/JS livre (pixel vai no ZIP da landing).
 - **Misc / Statistics** — Uniqueness counting (não desliga enquanto algum flow usar a regra) + Campaign timezone; relatórios com colunas custom e `group by` por `param.<nome>` (`clicks.params`, sem whitelist); venda por variante na aba Statistics do flow (`click_steps.variant` ⋈ `clicks.status`).
@@ -365,7 +365,7 @@ Dois andares em JSON, sem coluna SQL. Campo‑a‑campo em `docs/en/networks-and
 Diagramas e detalhe em `docs/en/meta-capi.md`.
 
 - **PageView é do browser:** o TDS **não** injeta o Meta Pixel — o snippet (`fbq('init'…)` + `PageView` + noscript) vai no ZIP/`index.html` da landing; dispara depois do 302 `/__dl/…` (modo `direct`), fora do postback.
-- **CAPI depois do postback:** rede → `/api/postback.php` → `ConversionService::record` (resolve aliases da campanha) → INSERT `conversions` + UPDATE `clicks.status` → `process_capi_conversion` (mapa status TDS→evento Meta; Purchase exige `payout>0`, `EVENTS_REQUIRING_VALUE`) → `POST graph.facebook.com/v25.0/{pixel}/events`. `event_id = sha1(clickid|eventName|tid)` deduplica retry no Meta (48 h); `fbc` só nasce com `clicks.params.fbclid`.
+- **CAPI depois do postback:** rede → `/api/postback.php` → `ConversionService::record` → INSERT `conversions` + UPDATE `clicks.status` → `process_capi_conversion` → POSTs paralelos para até 20 `graph.facebook.com/v25.0/{pixel}/events`. `enabled`+mapa são globais; ID/token/test code são por pixel; falha isolada não reverte conversão nem cancela os demais. Formato legado de 1 pixel é lido e espelhado no primeiro item para rollback. `event_id = sha1(clickid|eventName|tid)` é igual entre pixels; Purchase exige payout; `fbc` só com `clicks.params.fbclid`. Tokens de todos os pixels são redigidos no CLI/API.
 - **Params só entram por GET real no host da campanha:** PHP Connect (`/api/phpconnect.php`) tem `QUERY_STRING` vazio e **não** grava params. O 302 para `/__dl/<clickid>/0/` **não leva a query** → `sub1={clickid}` precisa já estar resolvido no servidor (macro no HTML ou `{link:N}`).
 - **Site tracking** (`conversions.site.enabled`, redes sem “início de checkout”): injeta `window.ytdsConversion`; no CTA grava `conversions` (`source=site_script`) + `clicks.status` e dispara CAPI (default Lead→`InitiateCheckout`, sem payout). Venda depois vira Purchase pelo postback; o Lead **não some**.
 

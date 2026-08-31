@@ -652,6 +652,34 @@
     gap: 12px 24px;
 }
 
+.capi-pixels {
+    display: grid;
+    gap: 14px;
+    margin: 18px 0 14px;
+}
+
+.capi-pixel-card {
+    padding: 14px 16px 2px;
+    border: 1px solid rgba(76, 104, 158, 0.42);
+    border-radius: 8px;
+    background: rgba(16, 27, 48, 0.48);
+}
+
+.capi-pixel-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    color: #f0f4fb;
+}
+
+.capi-pixel-limit {
+    margin: 10px 0 0;
+    color: #9eabc0;
+    font-size: 13px;
+}
+
 @media (max-width: 767px) {
     .campaign-setting-row {
         align-items: flex-start;

@@ -1509,6 +1509,7 @@ class StatisticsTable implements JsonSerializable
 class CapiSettings implements JsonSerializable
 {
     public const MAX_MAPPINGS = 10;
+    public const MAX_PIXELS = 20;
     public const MAX_TOKEN_LENGTH = 1024;
     public const MAX_PIXEL_ID_LENGTH = 32;
     public const MAX_TEST_EVENT_CODE_LENGTH = 64;
@@ -1528,6 +1529,8 @@ class CapiSettings implements JsonSerializable
     public string $pixelId = '';
     public string $accessToken = '';
     public string $testEventCode = '';
+    /** @var list<CapiPixelSettings> */
+    public array $pixels = [];
     /** @var list<CapiEventMapping> */
     public array $mappings = [];
 
@@ -1539,9 +1542,23 @@ class CapiSettings implements JsonSerializable
         $cs->enabled = is_bool($arr['enabled'] ?? null)
             ? $arr['enabled']
             : filter_var($arr['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $cs->pixelId = trim((string)($arr['pixel_id'] ?? ''));
-        $cs->accessToken = trim((string)($arr['access_token'] ?? ''));
-        $cs->testEventCode = trim((string)($arr['test_event_code'] ?? ''));
+        $rawPixels = is_array($arr['pixels'] ?? null) && array_is_list($arr['pixels'])
+            ? $arr['pixels']
+            : [];
+        if ($rawPixels !== []) {
+            foreach (array_slice($rawPixels, 0, self::MAX_PIXELS) as $pixel) {
+                $cs->pixels[] = CapiPixelSettings::fromArray($pixel);
+            }
+        } else {
+            $legacy = CapiPixelSettings::fromArray($arr);
+            if ($legacy->pixelId !== '' || $legacy->accessToken !== '' || $legacy->testEventCode !== '') {
+                $cs->pixels[] = $legacy;
+            }
+        }
+        $primary = $cs->pixels[0] ?? new CapiPixelSettings('', '', '');
+        $cs->pixelId = $primary->pixelId;
+        $cs->accessToken = $primary->accessToken;
+        $cs->testEventCode = $primary->testEventCode;
 
         $cs->mappings = [];
         foreach (is_array($arr['map'] ?? null) ? $arr['map'] : [] as $mapping) {
@@ -1558,6 +1575,7 @@ class CapiSettings implements JsonSerializable
             'pixel_id' => $this->pixelId,
             'access_token' => $this->accessToken,
             'test_event_code' => $this->testEventCode,
+            'pixels' => $this->pixels,
             'map' => $this->mappings,
         ];
     }
@@ -1566,9 +1584,17 @@ class CapiSettings implements JsonSerializable
     public function isUsable(): bool
     {
         return $this->enabled
-            && $this->pixelId !== ''
-            && $this->accessToken !== ''
+            && $this->usablePixels() !== []
             && $this->mappings !== [];
+    }
+
+    /** @return list<CapiPixelSettings> */
+    public function usablePixels(): array
+    {
+        return array_values(array_filter(
+            $this->pixels,
+            static fn(CapiPixelSettings $pixel): bool => $pixel->isUsable()
+        ));
     }
 
     /** The Meta event name configured for a conversion status, if any. */
@@ -1580,6 +1606,40 @@ class CapiSettings implements JsonSerializable
             }
         }
         return null;
+    }
+}
+
+class CapiPixelSettings implements JsonSerializable
+{
+    public function __construct(
+        public string $pixelId,
+        public string $accessToken,
+        public string $testEventCode = ''
+    ) {
+    }
+
+    public static function fromArray(mixed $arr): CapiPixelSettings
+    {
+        $arr = is_array($arr) ? $arr : [];
+        return new CapiPixelSettings(
+            trim((string)($arr['pixel_id'] ?? '')),
+            trim((string)($arr['access_token'] ?? '')),
+            trim((string)($arr['test_event_code'] ?? ''))
+        );
+    }
+
+    public function isUsable(): bool
+    {
+        return $this->pixelId !== '' && $this->accessToken !== '';
+    }
+
+    public function jsonSerialize(): array
+    {
+        return [
+            'pixel_id' => $this->pixelId,
+            'access_token' => $this->accessToken,
+            'test_event_code' => $this->testEventCode,
+        ];
     }
 }
 

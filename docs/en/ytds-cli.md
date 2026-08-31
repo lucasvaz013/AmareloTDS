@@ -60,7 +60,7 @@ The `token` is the instance's `adminApiToken` and is sent as `Authorization: Bea
 
 Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill-defaults`, and the `networks`/`destinations`/`landing` write verbs) is a **dry run by default**: it validates the request, checks domain overlap where relevant, and prints what would change, without writing. Add `--yes` to commit.
 
-- Reads mask secrets: `apikey`, the CAPI access token, and postback keys come back as `<redacted>`.
+- Reads mask secrets: `apikey`, the legacy CAPI access token, every `capi.pixels[].access_token`, and postback keys come back as `<redacted>`.
 - Writes read the raw stored settings, so a mutation can never persist `<redacted>` over a real secret.
 - Domain changes are validated against every other campaign; an overlap is refused with exit 5 in both dry run and commit.
 - Network and Destination deletion is refused with `RESOURCE_IN_USE` when a campaign Checkout Route still references the entry; the hint lists each campaign, flow, and step. The Networks/Destinations panel pages use the same check when a save would drop those ids.
@@ -112,6 +112,8 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 | `landing delete <name>` | delete a landing folder; dry run first lists the campaigns that reference it |
 
 `patch` runs the same uniqueness, event, conversion, postback, CAPI, and flow validators as a panel save, then a recursive merge. It is the general tool for `{link:N}`, folder, and step edits: supply the complete section as the fragment, exactly as the panel would post it. An empty object or a JSON array is refused (it would wipe the settings).
+
+For CAPI, `capi.pixels` is a complete replacement list of at most 20 `{pixel_id, access_token, test_event_code}` objects. The campaign-level `enabled` flag and status→event `map` are shared by every pixel. Always read the section, prepare the entire list, inspect the dry-run diff, and only then use `--yes`; partial list patches intentionally remove omitted pixels. The first pixel is mirrored into the legacy scalar fields for rollback compatibility.
 
 `landing edit` is intentionally generic rather than containing offer-specific delay or checkout logic. Its manifest is an object with 1–100 exact replacements, applied in order:
 

@@ -123,6 +123,14 @@ class CampaignService
                 $node[$last] = array_fill(0, count($value), self::REDACTED_VALUE);
             }
         }
+        if (is_array($settings['capi']['pixels'] ?? null)) {
+            foreach ($settings['capi']['pixels'] as &$pixel) {
+                if (is_array($pixel) && is_string($pixel['access_token'] ?? null) && $pixel['access_token'] !== '') {
+                    $pixel['access_token'] = self::REDACTED_VALUE;
+                }
+            }
+            unset($pixel);
+        }
         return $settings;
     }
 
@@ -331,6 +339,25 @@ class CampaignService
                 throw new YtdsOpError('INVALID_ARG', 400, "cannot set nested path '$path' on non-object field '$top'", '');
             }
             $this->deepSet($fragment[$top], array_slice($segments, 1), $value);
+            // Keep the legacy first-pixel fields writable for existing CLI/API automation.
+            // The runtime reads pixels[] when present, while older clients address these scalars.
+            if (
+                $top === 'capi'
+                && count($segments) === 2
+                && in_array($segments[1], ['pixel_id', 'access_token', 'test_event_code'], true)
+            ) {
+                if (!is_array($fragment['capi']['pixels'] ?? null) || !array_is_list($fragment['capi']['pixels'])) {
+                    $fragment['capi']['pixels'] = [];
+                }
+                if (!is_array($fragment['capi']['pixels'][0] ?? null)) {
+                    $fragment['capi']['pixels'][0] = [
+                        'pixel_id' => (string)($fragment['capi']['pixel_id'] ?? ''),
+                        'access_token' => (string)($fragment['capi']['access_token'] ?? ''),
+                        'test_event_code' => (string)($fragment['capi']['test_event_code'] ?? ''),
+                    ];
+                }
+                $fragment['capi']['pixels'][0][$segments[1]] = $value;
+            }
         }
         return $this->patch($id, $fragment, $commit);
     }

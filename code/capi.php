@@ -126,29 +126,63 @@ final class CapiSender
     /** @param list<array<string, mixed>> $events */
     public static function send(CapiSettings $settings, array $events): HttpResponse
     {
-        $payload = ['data' => $events];
-        if ($settings->testEventCode !== '') {
-            $payload['test_event_code'] = $settings->testEventCode;
+        $results = self::sendAll($settings, $events);
+        if ($results === []) {
+            throw new InvalidArgumentException('No usable Meta pixel configured');
         }
+        return $results[0]['response'];
+    }
 
-        return HttpClient::send(new HttpRequest(
-            id: 'capi-conversion',
-            url: self::endpoint($settings->pixelId),
-            method: 'POST',
-            body: json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            headers: [
-                'Content-Type: application/json',
-                // Sent as a header rather than ?access_token= so the token never
-                // reaches the URL we log.
-                'Authorization: Bearer ' . $settings->accessToken,
-            ],
-            // Meta recommends 1500ms; CURLOPT_TIMEOUT only takes whole seconds.
-            timeout: 2,
-            connectTimeout: 2,
-            verifyPeer: true,
-            verifyHost: 2,
-            userAgent: 'AmareloTDS CAPI',
-        ));
+    /**
+     * @param list<array<string, mixed>> $events
+     * @return list<HttpRequest>
+     */
+    public static function buildRequests(CapiSettings $settings, array $events): array
+    {
+        $requests = [];
+        foreach ($settings->usablePixels() as $index => $pixel) {
+            $payload = ['data' => $events];
+            if ($pixel->testEventCode !== '') {
+                $payload['test_event_code'] = $pixel->testEventCode;
+            }
+            $requests[] = new HttpRequest(
+                id: 'capi-conversion-' . $index,
+                url: self::endpoint($pixel->pixelId),
+                method: 'POST',
+                body: json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                headers: [
+                    'Content-Type: application/json',
+                    // Sent as a header rather than ?access_token= so the token never
+                    // reaches the URL we log.
+                    'Authorization: Bearer ' . $pixel->accessToken,
+                ],
+                // Meta recommends 1500ms; CURLOPT_TIMEOUT only takes whole seconds.
+                timeout: 2,
+                connectTimeout: 2,
+                verifyPeer: true,
+                verifyHost: 2,
+                userAgent: 'AmareloTDS CAPI',
+            );
+        }
+        return $requests;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $events
+     * @return list<array{pixel:CapiPixelSettings,response:HttpResponse}>
+     */
+    public static function sendAll(CapiSettings $settings, array $events): array
+    {
+        $pixels = $settings->usablePixels();
+        $requests = self::buildRequests($settings, $events);
+        $responses = HttpClient::sendParallel($requests);
+        $results = [];
+        foreach ($requests as $index => $request) {
+            if (isset($pixels[$index], $responses[$request->id])) {
+                $results[] = ['pixel' => $pixels[$index], 'response' => $responses[$request->id]];
+            }
+        }
+        return $results;
     }
 
     public static function endpoint(string $pixelId): string
@@ -179,7 +213,9 @@ function process_capi_conversion(
     array $click,
     ?float $value,
     string $currency,
-    ?string $tid = null
+    ?string $tid = null,
+    ?callable $sendAll = null,
+    ?callable $log = null
 ): void {
     $settings = $campaign->capi;
     if (!$settings->isUsable() || $click === []) {
@@ -191,25 +227,31 @@ function process_capi_conversion(
         return;
     }
 
+    $pixels = $settings->usablePixels();
     $clickid = (string)($click['clickid'] ?? '');
-    $context = [
+    $baseContext = [
         'destination' => 'meta_capi',
         'trigger_type' => 'conversion',
         'campaign_id' => $campaign->campaignId,
         'clickid' => $clickid,
         'status' => $status,
         'event_name' => $eventName,
-        'pixel_id' => $settings->pixelId,
     ];
+    $log ??= 'ytds_log_postback';
 
     if (in_array($eventName, CapiSettings::EVENTS_REQUIRING_VALUE, true)
         && ($value === null || $value <= 0.0)) {
-        ytds_log_postback(
-            'outgoing',
-            'failed',
-            'Meta CAPI event skipped',
-            $context + ['error' => $eventName . ' requires a payout value; none was reported.']
-        );
+        foreach ($pixels as $pixel) {
+            $log(
+                'outgoing',
+                'failed',
+                'Meta CAPI event skipped',
+                $baseContext + [
+                    'pixel_id' => $pixel->pixelId,
+                    'error' => $eventName . ' requires a payout value; none was reported.',
+                ]
+            );
+        }
         return;
     }
 
@@ -223,36 +265,48 @@ function process_capi_conversion(
             $currency,
             $tid
         );
-        $response = CapiSender::send($settings, [$event]);
+        $sendAll ??= static fn(CapiSettings $capi, array $events): array => CapiSender::sendAll($capi, $events);
+        $results = $sendAll($settings, [$event]);
     } catch (Throwable $exception) {
-        ytds_log_postback(
-            'outgoing',
-            'failed',
-            'Meta CAPI event failed',
-            $context + ['error' => $exception->getMessage()]
-        );
+        foreach ($pixels as $pixel) {
+            $log(
+                'outgoing',
+                'failed',
+                'Meta CAPI event failed',
+                $baseContext + ['pixel_id' => $pixel->pixelId, 'error' => $exception->getMessage()]
+            );
+        }
         return;
     }
 
-    // Logged so the share of traffic arriving without an ad click is measurable rather
-    // than guessed; those events reach Meta with only IP and user agent to match on.
-    $context['has_fbc'] = isset($event['user_data']['fbc']);
-    $context['event_id'] = $event['event_id'];
-    $context['http_code'] = $response->httpCode();
-    $body = is_string($response->content) ? $response->content : '';
-    if ($body !== '') {
-        $context['response_body'] = CapiSender::responseExcerpt($body);
-    }
-    if ($response->error !== '') {
-        $context['error'] = $response->error;
-    }
+    foreach ($results as $result) {
+        $pixel = $result['pixel'] ?? null;
+        $response = $result['response'] ?? null;
+        if (!$pixel instanceof CapiPixelSettings || !$response instanceof HttpResponse) {
+            continue;
+        }
+        $context = $baseContext + [
+            'pixel_id' => $pixel->pixelId,
+            // Logged so traffic arriving without an ad click is measurable rather than guessed.
+            'has_fbc' => isset($event['user_data']['fbc']),
+            'event_id' => $event['event_id'],
+            'http_code' => $response->httpCode(),
+        ];
+        $body = is_string($response->content) ? $response->content : '';
+        if ($body !== '') {
+            $context['response_body'] = CapiSender::responseExcerpt($body);
+        }
+        if ($response->error !== '') {
+            $context['error'] = $response->error;
+        }
 
-    ytds_log_postback(
-        'outgoing',
-        $response->isOk() ? 'delivered' : 'failed',
-        $response->isOk() ? 'Meta CAPI event delivered' : 'Meta CAPI event failed',
-        $context
-    );
+        $log(
+            'outgoing',
+            $response->isOk() ? 'delivered' : 'failed',
+            $response->isOk() ? 'Meta CAPI event delivered' : 'Meta CAPI event failed',
+            $context
+        );
+    }
 }
 
 function capi_event_source_url(Campaign $campaign): string

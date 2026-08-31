@@ -456,6 +456,7 @@
         "pixel_id": "",
         "access_token": "",
         "test_event_code": "",
+        "pixels": [],
         "map": []
     }
 }

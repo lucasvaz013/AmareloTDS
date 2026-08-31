@@ -231,26 +231,66 @@ function normalize_capi_input(array &$input): ?string
 
     $capi = &$input['capi'];
     $enabled = filter_var($capi['enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-    $pixelId = trim((string)($capi['pixel_id'] ?? ''));
-    if ($pixelId !== '' && preg_match('/^\d{1,' . CapiSettings::MAX_PIXEL_ID_LENGTH . '}$/', $pixelId) !== 1) {
-        return 'Conversions API pixel ID must be numeric.';
+    if (array_key_exists('pixels', $capi)) {
+        if (!is_array($capi['pixels']) || !array_is_list($capi['pixels'])) {
+            return 'Conversions API pixels must be a list.';
+        }
+        $rawPixels = $capi['pixels'];
+    } else {
+        $legacyPixel = [
+            'pixel_id' => $capi['pixel_id'] ?? '',
+            'access_token' => $capi['access_token'] ?? '',
+            'test_event_code' => $capi['test_event_code'] ?? '',
+        ];
+        $rawPixels = implode('', array_map(static fn(mixed $value): string => trim((string)$value), $legacyPixel)) === ''
+            ? []
+            : [$legacyPixel];
     }
-
-    $accessToken = trim((string)($capi['access_token'] ?? ''));
-    if (
-        strlen($accessToken) > CapiSettings::MAX_TOKEN_LENGTH
-        || preg_match('/[\x00-\x1F\x7F]/', $accessToken) === 1
-    ) {
-        return 'Conversions API access token is invalid.';
-    }
-
-    $testEventCode = trim((string)($capi['test_event_code'] ?? ''));
-    if (
-        $testEventCode !== ''
-        && preg_match('/^[A-Za-z0-9_-]{1,' . CapiSettings::MAX_TEST_EVENT_CODE_LENGTH . '}$/', $testEventCode) !== 1
-    ) {
-        return 'Conversions API test event code is invalid.';
+    $normalizedPixels = [];
+    $seenPixelIds = [];
+    foreach ($rawPixels as $index => $rawPixel) {
+        $label = 'Conversions API pixel #' . ($index + 1);
+        if (!is_array($rawPixel)) {
+            return $label . ' must be an object.';
+        }
+        $pixelId = trim((string)($rawPixel['pixel_id'] ?? ''));
+        $accessToken = trim((string)($rawPixel['access_token'] ?? ''));
+        $testEventCode = trim((string)($rawPixel['test_event_code'] ?? ''));
+        if ($pixelId === '' && $accessToken === '' && $testEventCode === '') {
+            continue;
+        }
+        if ($pixelId !== '' && preg_match('/^\d{1,' . CapiSettings::MAX_PIXEL_ID_LENGTH . '}$/', $pixelId) !== 1) {
+            return 'Conversions API pixel ID must be numeric (' . strtolower($label) . ').';
+        }
+        if (
+            strlen($accessToken) > CapiSettings::MAX_TOKEN_LENGTH
+            || preg_match('/[\x00-\x1F\x7F]/', $accessToken) === 1
+        ) {
+            return $label . ' access token is invalid.';
+        }
+        if (
+            $testEventCode !== ''
+            && preg_match('/^[A-Za-z0-9_-]{1,' . CapiSettings::MAX_TEST_EVENT_CODE_LENGTH . '}$/', $testEventCode) !== 1
+        ) {
+            return $label . ' test event code is invalid.';
+        }
+        if ($pixelId !== '' && isset($seenPixelIds[$pixelId])) {
+            return $label . ' repeats pixel ID "' . $pixelId . '".';
+        }
+        if ($pixelId !== '') {
+            $seenPixelIds[$pixelId] = true;
+        }
+        if ($enabled && ($pixelId === '' || $accessToken === '')) {
+            return 'Enabling the Conversions API requires a pixel ID, an access token and at least one event.';
+        }
+        $normalizedPixels[] = [
+            'pixel_id' => $pixelId,
+            'access_token' => $accessToken,
+            'test_event_code' => $testEventCode,
+        ];
+        if (count($normalizedPixels) > CapiSettings::MAX_PIXELS) {
+            return 'A campaign supports at most ' . CapiSettings::MAX_PIXELS . ' Meta pixels.';
+        }
     }
 
     $rawMap = $capi['map'] ?? [];
@@ -294,15 +334,22 @@ function normalize_capi_input(array &$input): ?string
         $normalizedMap[] = ['status' => $status, 'event_name' => $eventName];
     }
 
-    if ($enabled && ($pixelId === '' || $accessToken === '' || $normalizedMap === [])) {
+    if ($enabled && ($normalizedPixels === [] || $normalizedMap === [])) {
         return 'Enabling the Conversions API requires a pixel ID, an access token and at least one event.';
     }
 
+    $primaryPixel = $normalizedPixels[0] ?? [
+        'pixel_id' => '',
+        'access_token' => '',
+        'test_event_code' => '',
+    ];
+
     $capi = [
         'enabled' => $enabled,
-        'pixel_id' => $pixelId,
-        'access_token' => $accessToken,
-        'test_event_code' => $testEventCode,
+        'pixel_id' => $primaryPixel['pixel_id'],
+        'access_token' => $primaryPixel['access_token'],
+        'test_event_code' => $primaryPixel['test_event_code'],
+        'pixels' => $normalizedPixels,
         'map' => $normalizedMap,
     ];
 

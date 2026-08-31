@@ -8,27 +8,29 @@ The **Meta Conversions API** section appears in the campaign settings sidebar. A
 
 ### Enabling CAPI
 
-The **Send events to Meta** checkbox enables the integration. Saving with the checkbox on requires all three of the following or validation rejects the save:
+The **Send events to Meta** checkbox enables the integration. A campaign can configure up to 20 pixels. Saving with the checkbox on requires all three of the following or validation rejects the save:
 
-- A non-empty Pixel ID
-- A non-empty access token
+- At least one pixel with a non-empty Pixel ID and access token
+- Every configured pixel to have both its Pixel ID and access token
 - At least one entry in the status → event map
 
 Disabling the checkbox saves the configuration but stops all event delivery. Existing mapping rows are preserved.
 
-### Pixel ID
+### Pixels
 
-Numeric only, up to 32 characters. Obtain this from Meta Events Manager. The field does not accept letters or punctuation; the server rejects a non-numeric value on save.
+Use **Add pixel** to add destinations and **Remove** to delete one. Every mapped conversion is sent to every configured pixel in parallel. Pixel IDs must be unique within the campaign, numeric only, and no longer than 32 characters. Obtain each ID from Meta Events Manager.
+
+The event map is shared: for example, if `Lead → InitiateCheckout` is configured, every pixel receives the same `InitiateCheckout` event and deterministic `event_id`. Pixel ID is deliberately not included in `event_id`; Meta deduplication is scoped to each pixel.
 
 ### Access Token
 
-A System User access token with `ads_management` permission. The field is rendered as a password input and is never returned in clear text after being saved. The token is stored in `campaigns.settings` (in the SQLite database and in backups); it must not be committed to any versioned file or logged unredacted. The server rejects tokens longer than 1024 characters or containing control characters.
+Each pixel has its own System User access token with `ads_management` permission. The field is rendered as a password input in the authenticated campaign panel. The panel must retain the value so an unchanged save does not erase the credential; machine reads through the ytds CLI and Admin API always return every CAPI token as `<redacted>`. Tokens are stored in `campaigns.settings` (in the SQLite database and backups); they must not be committed or logged. The server rejects tokens longer than 1024 characters or containing control characters.
 
 Use a System User token rather than a personal user token; personal tokens expire.
 
 ### Test Event Code
 
-Optional. When non-empty, every outgoing payload includes `test_event_code`, routing events to the **Test Events** tab in Events Manager without affecting production data. Accepted characters are letters, digits, hyphens, and underscores; maximum 64 characters. Remove the code before going live.
+Optional and configured separately for each pixel. When non-empty, that pixel's payload includes `test_event_code`, routing the event to its **Test Events** tab in Events Manager without affecting production data. Accepted characters are letters, digits, hyphens, and underscores; maximum 64 characters. Remove the code before going live.
 
 ### Status → Meta Event Map
 
@@ -47,15 +49,21 @@ Event names must match Meta's standard event list exactly (e.g. `Purchase`, `Ini
 
 When the sales platform calls `api/postback.php` with a `clickid`, `status`, `payout`, and `currency`, `ConversionService` records the conversion and then calls `process_capi_conversion`. The function:
 
-1. Checks that CAPI is enabled and the campaign has a pixel ID, access token, and at least one mapping (`isUsable()`).
+1. Checks that CAPI is enabled and the campaign has at least one usable pixel and one mapping (`isUsable()`).
 2. Looks up the Meta event name for the incoming status using the campaign map.
 3. If no mapping exists for that status, exits silently.
-4. For events in `EVENTS_REQUIRING_VALUE` (currently `Purchase`), exits and logs a failure if the reported payout is zero or absent. A Purchase event with no payout value is never sent.
+4. For events in `EVENTS_REQUIRING_VALUE` (currently `Purchase`), exits and logs one skip per pixel if the reported payout is zero or absent. A Purchase event with no payout value is never sent.
 5. Builds the event payload using the click data captured at visit time: client IP address, user agent, and — when present — the `fbc` parameter derived from the captured `fbclid`.
-6. POSTs the payload as JSON to `https://graph.facebook.com/v25.0/{pixelId}/events` with the access token in an `Authorization: Bearer` header (not in the URL).
-7. Logs the outcome with `ytds_log_postback`, including the HTTP status code, response body excerpt, and whether `fbc` was present. The access token is never written to the log.
+6. Creates one POST per pixel to `https://graph.facebook.com/v25.0/{pixelId}/events`, with that pixel's access token in an `Authorization: Bearer` header (not in the URL), and executes the requests in parallel.
+7. Logs each pixel independently with `ytds_log_postback`, including Pixel ID, HTTP status code, response body excerpt, and whether `fbc` was present. Access tokens are never written to the log. A failed pixel does not cancel successful deliveries to other pixels.
 
-This call is synchronous and shares the postback request's execution. There is no retry queue: a network failure or a non-200 response from Meta is logged as failed and not re-attempted.
+The parallel batch is synchronous and shares the postback request's execution. There is no retry queue: a network failure or a non-200 response from Meta is logged as failed for that pixel and not re-attempted. The conversion was already recorded and is never rolled back because a Meta destination failed.
+
+### Stored-format compatibility
+
+Existing campaigns with the legacy scalar `pixel_id`, `access_token`, and `test_event_code` load automatically as a one-pixel list; no SQL or manual migration is required. New saves store `pixels[]` and mirror the first pixel into those scalar fields. This lets an emergency rollback to older code continue sending to the first pixel. Do not edit CAPI in the old panel during a rollback, because old code does not know how to preserve additional pixels.
+
+The Graph API version remains deliberately pinned in code (`v25.0`). It is not configurable by campaign or pixel because Graph versions can change payload compatibility.
 
 ### Event Identity and Deduplication
 

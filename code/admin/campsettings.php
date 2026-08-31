@@ -1370,19 +1370,49 @@ global $c, $db, $campId;
                     </div>
                     <label class="ywb-radio-label"><input type="checkbox" id="capi-enabled" <?= $c->capi->enabled ? 'checked' : '' ?> /> Send events to Meta</label>
                 </div>
-                <div class="integration-field">
-                    <label for="capi-pixel-id">Pixel ID</label>
-                    <input id="capi-pixel-id" type="text" inputmode="numeric" class="form-control" maxlength="<?= CapiSettings::MAX_PIXEL_ID_LENGTH ?>" placeholder="1234567890" value="<?= htmlspecialchars($c->capi->pixelId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" />
+                <?php
+                    $capiPixels = $c->capi->pixels;
+                    if ($capiPixels === []) {
+                        $capiPixels = [new CapiPixelSettings('', '', '')];
+                    }
+                ?>
+                <div id="capi-pixels" class="capi-pixels" data-max-pixels="<?= CapiSettings::MAX_PIXELS ?>">
+                    <?php foreach ($capiPixels as $capiPixelIndex => $capiPixel) { ?>
+                    <section class="capi-pixel-card" data-capi-pixel>
+                        <div class="capi-pixel-heading">
+                            <strong data-capi-pixel-title>Pixel <?= $capiPixelIndex + 1 ?></strong>
+                            <button type="button" class="btn btn-danger campaign-icon-btn" data-remove-capi-pixel title="Remove pixel" aria-label="Remove Pixel <?= $capiPixelIndex + 1 ?>"><i class="bi bi-trash" aria-hidden="true"></i></button>
+                        </div>
+                        <div class="integration-field">
+                            <label>Pixel ID</label>
+                            <input type="text" inputmode="numeric" class="form-control" data-capi-pixel-id maxlength="<?= CapiSettings::MAX_PIXEL_ID_LENGTH ?>" placeholder="1234567890" value="<?= htmlspecialchars($capiPixel->pixelId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" />
+                        </div>
+                        <div class="integration-field">
+                            <label>Access token</label>
+                            <input type="password" class="form-control" data-capi-access-token autocomplete="off" spellcheck="false" maxlength="<?= CapiSettings::MAX_TOKEN_LENGTH ?>" placeholder="System User token" value="<?= htmlspecialchars($capiPixel->accessToken, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" />
+                        </div>
+                        <div class="integration-field">
+                            <label>Test event code</label>
+                            <input type="text" class="form-control" data-capi-test-event-code maxlength="<?= CapiSettings::MAX_TEST_EVENT_CODE_LENGTH ?>" placeholder="Leave empty in production" value="<?= htmlspecialchars($capiPixel->testEventCode, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" />
+                        </div>
+                    </section>
+                    <?php } ?>
                 </div>
-                <div class="integration-field">
-                    <label for="capi-access-token">Access token</label>
-                    <input id="capi-access-token" type="password" class="form-control" autocomplete="off" spellcheck="false" maxlength="<?= CapiSettings::MAX_TOKEN_LENGTH ?>" placeholder="System User token" value="<?= htmlspecialchars($c->capi->accessToken, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" />
-                </div>
-                <div class="integration-field">
-                    <label for="capi-test-event-code">Test event code</label>
-                    <input id="capi-test-event-code" type="text" class="form-control" maxlength="<?= CapiSettings::MAX_TEST_EVENT_CODE_LENGTH ?>" placeholder="Leave empty in production" value="<?= htmlspecialchars($c->capi->testEventCode, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?>" />
-                </div>
+                <button type="button" id="add-capi-pixel" class="btn btn-primary campaign-action-btn"><i class="bi bi-plus-circle" aria-hidden="true"></i> Add pixel</button>
+                <p class="capi-pixel-limit">Up to <?= CapiSettings::MAX_PIXELS ?> pixels receive each mapped event in parallel.</p>
             </div>
+
+            <template id="capi-pixel-template">
+                <section class="capi-pixel-card" data-capi-pixel>
+                    <div class="capi-pixel-heading">
+                        <strong data-capi-pixel-title>Pixel</strong>
+                        <button type="button" class="btn btn-danger campaign-icon-btn" data-remove-capi-pixel title="Remove pixel" aria-label="Remove pixel"><i class="bi bi-trash" aria-hidden="true"></i></button>
+                    </div>
+                    <div class="integration-field"><label>Pixel ID</label><input type="text" inputmode="numeric" class="form-control" data-capi-pixel-id maxlength="<?= CapiSettings::MAX_PIXEL_ID_LENGTH ?>" placeholder="1234567890" /></div>
+                    <div class="integration-field"><label>Access token</label><input type="password" class="form-control" data-capi-access-token autocomplete="off" spellcheck="false" maxlength="<?= CapiSettings::MAX_TOKEN_LENGTH ?>" placeholder="System User token" /></div>
+                    <div class="integration-field"><label>Test event code</label><input type="text" class="form-control" data-capi-test-event-code maxlength="<?= CapiSettings::MAX_TEST_EVENT_CODE_LENGTH ?>" placeholder="Leave empty in production" /></div>
+                </section>
+            </template>
 
             <?php
                 // Lead and Purchase are built-in statuses the catalog cannot drop, so

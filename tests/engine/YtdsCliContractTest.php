@@ -37,7 +37,15 @@ final class YtdsCliContractTest extends TestCase
                 ['name' => 'Flow 1', 'filters' => [], 'steps' => []],
                 ['name' => 'Flow 2', 'filters' => [], 'steps' => []],
             ]],
-            'capi' => ['enabled' => false, 'pixel_id' => '', 'access_token' => 'SECRET_CAPI_TOKEN'],
+            'capi' => [
+                'enabled' => false,
+                'pixel_id' => '111',
+                'access_token' => 'SECRET_CAPI_TOKEN',
+                'pixels' => [
+                    ['pixel_id' => '111', 'access_token' => 'SECRET_CAPI_TOKEN', 'test_event_code' => ''],
+                    ['pixel_id' => '222', 'access_token' => 'SECRET_CAPI_TOKEN_2', 'test_event_code' => 'TEST2'],
+                ],
+            ],
             'postback' => ['pbkey' => ['enabled' => true, 'keys' => ['SECRET_PBKEY']]],
         ]);
         $this->db->seedCampaign(2, 'beta', []);
@@ -129,6 +137,9 @@ final class YtdsCliContractTest extends TestCase
         $this->assertStringNotContainsString('SECRET_', $run['stdout']);
         $this->assertSame('<redacted>', $payload['settings']['apikey']);
         $this->assertSame('<redacted>', $payload['settings']['capi']['access_token']);
+        $this->assertSame('<redacted>', $payload['settings']['capi']['pixels'][0]['access_token']);
+        $this->assertSame('<redacted>', $payload['settings']['capi']['pixels'][1]['access_token']);
+        $this->assertSame('222', $payload['settings']['capi']['pixels'][1]['pixel_id']);
         $this->assertSame(['<redacted>'], $payload['settings']['postback']['pbkey']['keys']);
     }
 
