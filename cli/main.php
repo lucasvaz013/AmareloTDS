@@ -15,8 +15,10 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/doctor.php';
 require_once __DIR__ . '/remote.php';
 require_once dirname(__DIR__) . '/code/landings.php';
+require_once dirname(__DIR__) . '/code/campaignservice.php';
+require_once dirname(__DIR__) . '/code/costimport.php';
 
-const YTDS_SURFACE = 'ytds <campaigns list | campaign get <id> [--section p] [--full] | campaign create --name X [--from-template blank] [--yes] | campaign clone|rename|delete|domains|kill-defaults <id> [...] [--yes] | campaign patch <id> (--apply f.json | --set path=val ...) [--yes] | networks list|add|update|delete | destinations list|add|update|delete | landing list|upload|download|edit|replace|duplicate|delete|pack|verify | stats --campaign N [--columns a,b] [--groupby c] | clicks --campaign N [--view v] [--limit N] [--page N] [--sort field] [--dir asc|desc] [--filter field:op:value] [--param key] [--search term] | version | doctor>; global: [--env local|stg|prod] [--db path]';
+const YTDS_SURFACE = 'ytds <campaigns list | campaign get <id> [--section p] [--full] | campaign create --name X [--from-template blank] [--yes] | campaign clone|rename|delete|domains|kill-defaults <id> [...] [--yes] | campaign patch <id> (--apply f.json | --set path=val ...) [--yes] | networks list|add|update|delete | destinations list|add|update|delete | landing list|upload|download|edit|replace|duplicate|delete|pack|verify | costs import --file report.csv [--yes] | stats --campaign N [--columns a,b] [--groupby c] | clicks --campaign N [--view v] [--limit N] [--page N] [--sort field] [--dir asc|desc] [--filter field:op:value] [--param key] [--search term] | version | doctor>; global: [--env local|stg|prod] [--db path]';
 
 function ytds_run(array $argv): int
 {
@@ -57,6 +59,7 @@ function ytds_dispatch(array $args): int
         $pos[0] === 'destinations' => ytds_cmd_destinations($pos, $opts),
         $pos[0] === 'networks' => ytds_cmd_networks($pos, $opts),
         $pos[0] === 'stats' && count($pos) === 1 => ytds_cmd_stats($opts),
+        $cmd === 'costs import' && count($pos) === 2 => ytds_cmd_costs_import($opts),
         $pos[0] === 'clicks' && count($pos) === 1 => ytds_cmd_clicks($opts),
         $pos[0] === 'version' && count($pos) === 1 => ytds_cmd_version($opts),
         $pos[0] === 'doctor' && count($pos) === 1 => ytds_cmd_doctor($opts),
@@ -336,6 +339,26 @@ function ytds_cmd_stats(array $opts): int
         ]));
     }
     return ytds_local($opts, static fn(AdminOps $ops): array => $ops->stats((int)$campaign, $from, $to, $columns, $groupby));
+}
+
+/** @param array<string, string|true|array<int, string>> $opts */
+function ytds_cmd_costs_import(array $opts): int
+{
+    $file = isset($opts['file']) && is_string($opts['file']) ? $opts['file'] : '';
+    if ($file === '') {
+        return ytds_fail('INVALID_ARG', 'costs import requires --file <report.csv>', 'ytds costs import --file report.csv [--yes] [--env stg]', 2);
+    }
+    $commit = isset($opts['yes']);
+    try {
+        $manifest = MetaCostCsv::parseFile($file);
+    } catch (YtdsOpError $e) {
+        return ytds_fail($e->errorCode, $e->getMessage(), $e->hint, ytds_exit_for_code($e->errorCode));
+    }
+    if (($env = ytds_env($opts)) !== 'local') {
+        $params = $commit ? ['commit' => '1'] : [];
+        return ytds_remote($env, 'costs.import', $params, 'POST', (string)json_encode($manifest));
+    }
+    return ytds_local($opts, static fn(AdminOps $ops): array => $ops->costsImport($manifest, $commit));
 }
 
 /** @param array<string, string|true|array<int, string>> $opts */
@@ -800,7 +823,7 @@ function ytds_exit_for_code(string $code, int $httpStatus = 0): int
     static $map = [
         'AUTH_INVALID' => 4, 'API_DISABLED' => 4, 'AUTH_MISSING' => 4, 'CONFIG_MISSING' => 4, 'CONFIG_INVALID' => 4,
         'CAMPAIGN_NOT_FOUND' => 3, 'SECTION_NOT_FOUND' => 3, 'DB_NOT_FOUND' => 3,
-        'INVALID_ARG' => 2, 'UNKNOWN_ACTION' => 2, 'USAGE' => 2, 'METHOD_NOT_ALLOWED' => 2, 'VALIDATION' => 2, 'RESOURCE_IN_USE' => 2, 'REPLACEMENT_COUNT_MISMATCH' => 2,
+        'INVALID_ARG' => 2, 'INVALID_CSV' => 2, 'INVALID_CURRENCY' => 2, 'FILE_NOT_FOUND' => 2, 'COST_IMPORT_NOT_READY' => 2, 'COST_MATCH_AMBIGUOUS' => 2, 'UNKNOWN_ACTION' => 2, 'USAGE' => 2, 'METHOD_NOT_ALLOWED' => 2, 'VALIDATION' => 2, 'RESOURCE_IN_USE' => 2, 'REPLACEMENT_COUNT_MISMATCH' => 2,
         'DOMAIN_CONFLICT' => 5,
         'NETWORK_NOT_FOUND' => 3, 'DESTINATION_NOT_FOUND' => 3, 'LANDING_NOT_FOUND' => 3,
         'SETTINGS_CORRUPT' => 1, 'INTERNAL' => 1, 'TRANSPORT_ERROR' => 1, 'WRITE_FAILED' => 1,

@@ -162,6 +162,20 @@ bin/ytds landing replace promo --zip ./promo-new.zip --yes --env stg
 
 The edit manifest can alter delays, checkout `href`s, text/scripts, and insert `ytdsEvent()` or `ytdsConversion()` calls. Each exact anchor carries an `expected` count; any mismatch aborts the whole edit before a write.
 
+### 11. Reconcile historical Meta costs
+
+Export a Meta Ads Manager campaign report in USD with one row per campaign/day. The account/report timezone must match the campaign timezone used by TDS. The import matches each row by report date plus exact `utm_campaign`; it never guesses from the TDS campaign name or Meta campaign ID.
+
+```
+bin/ytds costs import --file ./meta-campaigns.csv --env stg
+# inspect ready=true, unmatched_rows=0, spend, matched_clicks, and every row
+bin/ytds costs import --file ./meta-campaigns.csv --yes --env stg
+# repeat the dry run: changed_clicks should now be 0
+bin/ytds costs import --file ./meta-campaigns.csv --env stg
+```
+
+Never commit a partial match. A committed import is atomic across the whole file and replaces the cost of each matched campaign/day/UTM group, making reruns safe and corrected reports reconcilable. Meta summary rows with an empty campaign name are ignored. If reports come from multiple files, combine their campaign rows into one CSV first so the complete batch is committed atomically.
+
 ## Scheduled health check
 
 A cron on the operator's machine can watch an instance and alert on failure. See `cli/cron/ytds-health.sh`:

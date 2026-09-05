@@ -51,14 +51,14 @@ The `token` is the instance's `adminApiToken` and is sent as `Authorization: Bea
 |---|---|
 | 0 | success |
 | 1 | internal/environment error (`INTERNAL`, `SETTINGS_CORRUPT`, `TRANSPORT_ERROR`, `WRITE_FAILED`), or `doctor` reporting a failed check |
-| 2 | input/conflict validation (`USAGE`, `INVALID_ARG`, `UNKNOWN_ACTION`, `VALIDATION`, `RESOURCE_IN_USE`) |
+| 2 | input/conflict validation (`USAGE`, `INVALID_ARG`, `INVALID_CSV`, `INVALID_CURRENCY`, `COST_IMPORT_NOT_READY`, `COST_MATCH_AMBIGUOUS`, `UNKNOWN_ACTION`, `VALIDATION`, `RESOURCE_IN_USE`) |
 | 3 | not found (`DB_NOT_FOUND`, `CAMPAIGN_NOT_FOUND`, `SECTION_NOT_FOUND`, `NETWORK_NOT_FOUND`, `DESTINATION_NOT_FOUND`, `LANDING_NOT_FOUND`) |
 | 4 | auth/config (`AUTH_INVALID`, `API_DISABLED`, `CONFIG_MISSING`, `CONFIG_INVALID`) |
 | 5 | domain conflict (`DOMAIN_CONFLICT`) |
 
 ## Safety model for mutations
 
-Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill-defaults`, and the `networks`/`destinations`/`landing` write verbs) is a **dry run by default**: it validates the request, checks domain overlap where relevant, and prints what would change, without writing. Add `--yes` to commit.
+Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill-defaults`, `costs import`, and the `networks`/`destinations`/`landing` write verbs) is a **dry run by default**: it validates the request, checks domain overlap where relevant, and prints what would change, without writing. Add `--yes` to commit.
 
 - Reads mask secrets: `apikey`, the legacy CAPI access token, every `capi.pixels[].access_token`, and postback keys come back as `<redacted>`.
 - Writes read the raw stored settings, so a mutation can never persist `<redacted>` over a real secret.
@@ -103,6 +103,7 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 | `campaign domains <id> --set a.com,b.com` | replace the campaign's domain list (validated for overlap) |
 | `campaign patch <id> (--apply <file.json> \| --set path=value ...)` | merge a settings fragment through the panel validators; `--apply` takes a whole section as JSON, repeatable `--set` assigns dotted paths onto the current settings (the two are mutually exclusive); dry run shows a redacted top-level diff |
 | `campaign kill-defaults <id>` | remove the author's three dangerous defaults (country filter, redirect, postback) if present; idempotent |
+| `costs import --file <meta.csv>` | reconcile historical Meta spend by report date plus exact `utm_campaign`; preview all matched/unmatched rows before `--yes` |
 | `networks add\|update\|delete [<id>]` | manage the global Networks library (`--name`, `--params`) |
 | `destinations add\|update\|delete [<id>]` | manage the global Destinations library (`--name`, `--base-url`, `--network <id>`) |
 | `landing upload <name> --zip <file>` | extract a ZIP into a new landing folder (rejects `../` and absolute entries) |
@@ -112,6 +113,8 @@ Every mutation (`create`, `clone`, `rename`, `delete`, `domains`, `patch`, `kill
 | `landing delete <name>` | delete a landing folder; dry run first lists the campaigns that reference it |
 
 `patch` runs the same uniqueness, event, conversion, postback, CAPI, and flow validators as a panel save, then a recursive merge. It is the general tool for `{link:N}`, folder, and step edits: supply the complete section as the fragment, exactly as the panel would post it. An empty object or a JSON array is refused (it would wipe the settings).
+
+`costs import` accepts a comma-separated Meta Ads Manager campaign report in USD with Portuguese headers `Nome da campanha`, `Valor gasto (USD)`, and `Início dos relatórios`. `Moeda`, `Identificação da campanha`, and `Cliques no link` are optional metadata. Blank campaign-name total rows are ignored, and duplicate date/name rows are combined. Matching uses the Meta report date in each TDS campaign timezone plus an exact `params.utm_campaign` value; a row matching zero or multiple TDS campaigns prevents commit. For each matched campaign-day, spend is distributed deterministically across every allowed TDS click at 1e-8 USD precision. The operation replaces that group's costs rather than incrementing them, so repeating the same import is idempotent and corrected reports reconcile prior values. All rows commit in one transaction.
 
 For CAPI, `capi.pixels` is a complete replacement list of at most 20 `{pixel_id, access_token, test_event_code}` objects. The campaign-level `enabled` flag and status→event `map` are shared by every pixel. Always read the section, prepare the entire list, inspect the dry-run diff, and only then use `--yes`; partial list patches intentionally remove omitted pixels. The first pixel is mirrored into the legacy scalar fields for rollback compatibility.
 
@@ -161,6 +164,10 @@ bin/ytds destinations list --env stg
 # mutate: preview, then commit
 bin/ytds campaign domains 5 --set ytds.example.com --env stg
 bin/ytds campaign domains 5 --set ytds.example.com --yes --env stg
+
+# reconcile a Meta campaign report (always inspect ready/summary/rows first)
+bin/ytds costs import --file ./meta-campaigns.csv --env stg
+bin/ytds costs import --file ./meta-campaigns.csv --yes --env stg
 
 # author a new campaign
 bin/ytds campaign create --name "Q3 Offer" --from-template blank --env stg          # dry run

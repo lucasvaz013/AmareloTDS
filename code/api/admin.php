@@ -96,6 +96,13 @@ function ytds_admin_api_run_action(AdminOps $ops, string $action, array $query, 
                 ]
             );
 
+        case 'costs.import':
+            $decoded = json_decode($body, true);
+            if (!is_array($decoded)) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'costs.import requires a JSON manifest body', 'use ytds costs import --file report.csv');
+            }
+            return $ops->costsImport($decoded, ytds_admin_api_flag($query, 'commit'));
+
         case 'landing.list':
             return $ops->landings(ytds_admin_api_landings_dir($codeDir));
 
@@ -289,7 +296,7 @@ function ytds_admin_api_flag(array $query, string $key): bool
 /** Write actions mutate state and must be POSTed (GET stays safe/idempotent). */
 function ytds_admin_api_is_write(string $action): bool
 {
-    return in_array($action, ['campaign.create', 'campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'campaign.patch', 'campaign.set', 'campaign.kill-defaults', 'networks.add', 'networks.update', 'networks.delete', 'destinations.add', 'destinations.update', 'destinations.delete', 'landing.upload', 'landing.edit', 'landing.replace', 'landing.duplicate', 'landing.delete'], true);
+    return in_array($action, ['campaign.create', 'campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'campaign.patch', 'campaign.set', 'campaign.kill-defaults', 'networks.add', 'networks.update', 'networks.delete', 'destinations.add', 'destinations.update', 'destinations.delete', 'landing.upload', 'landing.edit', 'landing.replace', 'landing.duplicate', 'landing.delete', 'costs.import'], true);
 }
 
 /** Resolves the landings cache directory, falling back to the unresolved path when it does not exist yet. */

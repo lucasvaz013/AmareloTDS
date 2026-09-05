@@ -82,6 +82,81 @@ final class AdminApiTest extends TestCase
         $this->assertSame(1, $result['body']['rows'][0]['clicks']);
     }
 
+    public function testDispatchCostsImportDryRunAndCommit(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'api-cost', 'campaign_id' => 1, 'time' => 1699963200, 'params' => '{"utm_campaign":"meta-alpha"}'],
+        ]);
+        $body = json_encode([
+            'source' => ['name' => 'meta.csv', 'sha256' => str_repeat('a', 64)],
+            'rows' => [[
+                'date' => '2023-11-14',
+                'utm_campaign' => 'meta-alpha',
+                'meta_campaign_id' => '123',
+                'currency' => 'USD',
+                'spend_cents' => 1234,
+                'meta_link_clicks' => 10,
+            ]],
+        ]);
+
+        $dry = ytds_admin_api_dispatch($this->db, 'costs.import', [], $this->codeDir, $body);
+        $this->assertSame(200, $dry['status']);
+        $this->assertTrue($dry['body']['dry_run']);
+
+        $done = ytds_admin_api_dispatch($this->db, 'costs.import', ['commit' => '1'], $this->codeDir, $body);
+        $this->assertSame(200, $done['status']);
+        $this->assertFalse($done['body']['dry_run']);
+        $this->assertSame('12.34', $done['body']['summary']['cost_after']);
+    }
+
+    public function testDispatchCostsImportRejectsUnmatchedCommitAtomically(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'api-cost-existing', 'campaign_id' => 1, 'time' => 1699963200, 'params' => '{"utm_campaign":"meta-alpha"}', 'cost' => 4.0],
+        ]);
+        $body = json_encode(['rows' => [
+            ['date' => '2023-11-14', 'utm_campaign' => 'meta-alpha', 'currency' => 'USD', 'spend_cents' => 1000],
+            ['date' => '2023-11-14', 'utm_campaign' => 'missing', 'currency' => 'USD', 'spend_cents' => 500],
+        ]]);
+
+        $done = ytds_admin_api_dispatch($this->db, 'costs.import', ['commit' => '1'], $this->codeDir, $body);
+        $this->assertSame(409, $done['status']);
+        $this->assertSame('COST_IMPORT_NOT_READY', $done['body']['code']);
+
+        $stats = (new AdminOps($this->db))->stats(1, '14.11.23', '14.11.23', ['costs'], ['param.utm_campaign']);
+        $costs = array_column($stats['rows'], 'costs', 'group');
+        $this->assertEqualsWithDelta(4.0, $costs['meta-alpha'], 0.000001);
+    }
+
+    public function testDispatchCostsImportRejectsInvalidManifestValues(): void
+    {
+        $body = json_encode(['rows' => [[
+            'date' => '2023-11-14',
+            'utm_campaign' => 'meta-alpha',
+            'currency' => 'USD',
+            'spend_cents' => -1,
+        ]]]);
+
+        $result = ytds_admin_api_dispatch($this->db, 'costs.import', [], $this->codeDir, $body);
+        $this->assertSame(400, $result['status']);
+        $this->assertSame('INVALID_ARG', $result['body']['code']);
+    }
+
+    public function testDispatchCostsImportRejectsOversizedAggregate(): void
+    {
+        $row = [
+            'date' => '2023-11-14',
+            'utm_campaign' => 'meta-alpha',
+            'currency' => 'USD',
+            'spend_cents' => MetaCostCsv::MAX_SPEND_CENTS,
+        ];
+        $body = json_encode(['rows' => [$row, $row]]);
+
+        $result = ytds_admin_api_dispatch($this->db, 'costs.import', [], $this->codeDir, $body);
+        $this->assertSame(400, $result['status']);
+        $this->assertSame('INVALID_ARG', $result['body']['code']);
+    }
+
     public function testDispatchClicksTrafficbackNeedsNoCampaign(): void
     {
         $result = ytds_admin_api_dispatch($this->db, 'clicks', ['view' => 'trafficback'], $this->codeDir);
@@ -113,7 +188,7 @@ final class AdminApiTest extends TestCase
 
     public function testIsWriteActionClassification(): void
     {
-        foreach (['campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'landing.edit', 'landing.replace'] as $w) {
+        foreach (['campaign.clone', 'campaign.rename', 'campaign.delete', 'campaign.domains', 'landing.edit', 'landing.replace', 'costs.import'] as $w) {
             $this->assertTrue(ytds_admin_api_is_write($w), $w);
         }
         foreach (['version', 'campaigns.list', 'campaign.get', 'stats', 'destinations.list'] as $r) {

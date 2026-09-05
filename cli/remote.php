@@ -67,7 +67,7 @@ function ytds_http_request(string $url, string $token, array $query, string $met
             : 'application/json');
     }
     $ch = curl_init($full);
-    $timeout = in_array($query['action'] ?? '', ['landing.upload', 'landing.replace'], true) ? 120 : 20;
+    $timeout = in_array($query['action'] ?? '', ['landing.upload', 'landing.replace', 'costs.import'], true) ? 120 : 20;
     $opts = [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => $headers,

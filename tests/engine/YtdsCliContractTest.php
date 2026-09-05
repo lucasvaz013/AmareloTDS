@@ -105,6 +105,15 @@ final class YtdsCliContractTest extends TestCase
         ]);
     }
 
+    private function writeMetaCostCsv(string $campaignName, string $spend, string $date = '2023-11-14'): string
+    {
+        $path = sys_get_temp_dir() . '/amarelotds_meta_cost_' . uniqid() . '.csv';
+        $csv = "Nome da campanha,Moeda,Valor gasto (USD),Cliques no link,Início dos relatórios,Encerramento dos relatórios\n"
+            . $campaignName . ',USD,' . $spend . ",2,$date,$date\n";
+        file_put_contents($path, $csv);
+        return $path;
+    }
+
     // ── Phase 0: campaigns / campaign get / doctor (local) ──────────────────
 
     public function testCampaignsListNarrowContract(): void
@@ -209,6 +218,134 @@ final class YtdsCliContractTest extends TestCase
         $this->assertSame($before, hash_file('sha256', $this->dbPath));
     }
 
+    public function testCostsImportDryRunMatchesDateAndUtmWithoutWriting(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'cost-1', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'params' => '{"utm_campaign":"meta-alpha"}'],
+            ['clickid' => 'cost-2', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'params' => '{"utm_campaign":"meta-alpha"}'],
+        ]);
+        $csv = $this->writeMetaCostCsv('meta-alpha', '10.01');
+        $before = hash_file('sha256', $this->dbPath);
+
+        try {
+            $payload = $this->assertCleanJson($this->runCli(['costs', 'import', '--file', $csv, '--db', $this->dbPath]));
+        } finally {
+            @unlink($csv);
+        }
+
+        $this->assertTrue($payload['dry_run']);
+        $this->assertSame('costs.import', $payload['action']);
+        $this->assertSame(1, $payload['summary']['matched_rows']);
+        $this->assertSame(2, $payload['summary']['matched_clicks']);
+        $this->assertSame('10.01', $payload['summary']['spend']);
+        $this->assertSame('meta-alpha', $payload['rows'][0]['utm_campaign']);
+        $this->assertSame(1, $payload['rows'][0]['tds_campaign_id']);
+        clearstatcache();
+        $this->assertSame($before, hash_file('sha256', $this->dbPath));
+    }
+
+    public function testCostsImportCommitAllocatesExactSpendAndIsIdempotent(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'cost-commit-1', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'params' => '{"utm_campaign":"meta-alpha"}'],
+            ['clickid' => 'cost-commit-2', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'params' => '{"utm_campaign":"meta-alpha"}'],
+            ['clickid' => 'other-utm', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'params' => '{"utm_campaign":"other"}', 'cost' => 7.0],
+        ]);
+        $csv = $this->writeMetaCostCsv('meta-alpha', '10.01');
+
+        try {
+            $first = $this->assertCleanJson($this->runCli(['costs', 'import', '--file', $csv, '--yes', '--db', $this->dbPath]));
+            $second = $this->assertCleanJson($this->runCli(['costs', 'import', '--file', $csv, '--yes', '--db', $this->dbPath]));
+        } finally {
+            @unlink($csv);
+        }
+
+        $this->assertFalse($first['dry_run']);
+        $this->assertSame(2, $first['summary']['changed_clicks']);
+        $this->assertSame('10.01', $first['summary']['cost_after']);
+        $this->assertSame(0, $second['summary']['changed_clicks']);
+
+        $stats = $this->assertCleanJson($this->runCli([
+            'stats', '--campaign', '1', '--from', self::SEED_DATE, '--to', self::SEED_DATE,
+            '--columns', 'costs', '--groupby', 'param.utm_campaign', '--db', $this->dbPath,
+        ]));
+        $costs = array_column($stats['rows'], 'costs', 'group');
+        $this->assertEqualsWithDelta(10.01, $costs['meta-alpha'], 0.000001);
+        $this->assertEqualsWithDelta(7.0, $costs['other'], 0.000001);
+    }
+
+    public function testCostsImportAggregatesDuplicateCampaignDayRowsAndSkipsMetaTotal(): void
+    {
+        $this->db->seedClicks([
+            ['clickid' => 'cost-duplicate', 'campaign_id' => 1, 'time' => self::SEED_TIME, 'params' => '{"utm_campaign":"meta-alpha"}'],
+        ]);
+        $csv = sys_get_temp_dir() . '/amarelotds_meta_cost_' . uniqid() . '.csv';
+        file_put_contents(
+            $csv,
+            "Nome da campanha,Valor gasto (USD),Cliques no link,Início dos relatórios,Encerramento dos relatórios\n"
+            . ",3.00,3,2023-11-14,2023-11-14\n"
+            . "meta-alpha,1.00,1,2023-11-14,2023-11-14\n"
+            . "meta-alpha,2.00,2,2023-11-14,2023-11-14\n"
+        );
+
+        try {
+            $payload = $this->assertCleanJson($this->runCli(['costs', 'import', '--file', $csv, '--db', $this->dbPath]));
+        } finally {
+            @unlink($csv);
+        }
+
+        $this->assertSame(2, $payload['summary']['source_rows']);
+        $this->assertSame(1, $payload['summary']['input_rows']);
+        $this->assertSame('3.00', $payload['summary']['spend']);
+        $this->assertSame(3, $payload['rows'][0]['meta_link_clicks']);
+    }
+
+    public function testCostsImportInvalidCsvUsesInputErrorContract(): void
+    {
+        $csv = sys_get_temp_dir() . '/amarelotds_meta_cost_' . uniqid() . '.csv';
+        file_put_contents($csv, "wrong,headers\n1,2\n");
+        try {
+            $this->assertErrorContract(
+                $this->runCli(['costs', 'import', '--file', $csv, '--db', $this->dbPath]),
+                2,
+                'INVALID_CSV'
+            );
+        } finally {
+            @unlink($csv);
+        }
+    }
+
+    public function testCostsImportRejectsSpendBeyondSafetyLimit(): void
+    {
+        $csv = $this->writeMetaCostCsv('meta-alpha', '1000000000.01');
+        try {
+            $this->assertErrorContract(
+                $this->runCli(['costs', 'import', '--file', $csv, '--db', $this->dbPath]),
+                2,
+                'INVALID_CSV'
+            );
+        } finally {
+            @unlink($csv);
+        }
+    }
+
+    public function testCostsImportUnmatchedCommitUsesInputErrorAndDoesNotWrite(): void
+    {
+        $csv = $this->writeMetaCostCsv('missing-campaign', '10.01');
+        $before = hash_file('sha256', $this->dbPath);
+        try {
+            $this->assertErrorContract(
+                $this->runCli(['costs', 'import', '--file', $csv, '--yes', '--db', $this->dbPath]),
+                2,
+                'COST_IMPORT_NOT_READY'
+            );
+        } finally {
+            @unlink($csv);
+        }
+        clearstatcache();
+        $this->assertSame($before, hash_file('sha256', $this->dbPath));
+    }
+
     public function testDoctorHealthyDatabase(): void
     {
         $payload = $this->assertCleanJson($this->runCli(['doctor', '--db', $this->dbPath]));
@@ -304,6 +441,20 @@ final class YtdsCliContractTest extends TestCase
     {
         // isolatedConfig does not exist → CONFIG_MISSING, mapped to the auth/config exit code.
         $this->assertErrorContract($this->runCli(['campaigns', 'list', '--env', 'stg']), 4, 'CONFIG_MISSING');
+    }
+
+    public function testRemoteCostsImportUsesRemoteTransport(): void
+    {
+        $csv = $this->writeMetaCostCsv('meta-alpha', '10.01');
+        try {
+            $this->assertErrorContract(
+                $this->runCli(['costs', 'import', '--file', $csv, '--env', 'stg']),
+                4,
+                'CONFIG_MISSING'
+            );
+        } finally {
+            @unlink($csv);
+        }
     }
 
     public function testRemoteTransportErrorIsExit1(): void

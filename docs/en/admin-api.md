@@ -21,14 +21,14 @@ A missing or wrong token returns `401` with `{"code":"AUTH_INVALID"}`. The compa
 - **Reads use `GET`.** They are safe and idempotent.
 - **Mutations use `POST`.** A mutation issued as `GET` is refused with `405`, so a write can never happen through a safe verb.
 
-Parameters travel in the query string in both cases. `campaign.patch`, `campaign.set`, and `landing.edit` take JSON bodies; `landing.upload` and `landing.replace` take raw ZIP bytes.
+Parameters travel in the query string in both cases. `campaign.patch`, `campaign.set`, `landing.edit`, and `costs.import` take JSON bodies; `landing.upload` and `landing.replace` take raw ZIP bytes.
 
 ## Response shape
 
 - Success: HTTP `200` and the result object — the same JSON the CLI prints.
 - Error: the failing HTTP status and `{ "code": "...", "message": "...", "hint": "..." }`.
 
-Codes match the CLI: `INVALID_ARG`/`UNKNOWN_ACTION`/`VALIDATION` (400), `AUTH_INVALID`/`API_DISABLED` (401/404), `CAMPAIGN_NOT_FOUND`/`SECTION_NOT_FOUND`/`NETWORK_NOT_FOUND`/`DESTINATION_NOT_FOUND`/`LANDING_NOT_FOUND` (404), `DOMAIN_CONFLICT`/`RESOURCE_IN_USE` (409), `METHOD_NOT_ALLOWED` (405), `WRITE_FAILED`/`INTERNAL` (500).
+Codes match the CLI: `INVALID_ARG`/`UNKNOWN_ACTION`/`VALIDATION` (400), `AUTH_INVALID`/`API_DISABLED` (401/404), `CAMPAIGN_NOT_FOUND`/`SECTION_NOT_FOUND`/`NETWORK_NOT_FOUND`/`DESTINATION_NOT_FOUND`/`LANDING_NOT_FOUND` (404), `DOMAIN_CONFLICT`/`RESOURCE_IN_USE`/`COST_IMPORT_NOT_READY`/`COST_MATCH_AMBIGUOUS` (409), `METHOD_NOT_ALLOWED` (405), `WRITE_FAILED`/`INTERNAL` (500).
 
 Campaign settings are returned with secrets masked (`apikey`, the legacy CAPI access token, every `capi.pixels[].access_token`, and postback keys become `<redacted>`). Operational data such as clicks and destinations is returned in full to the authenticated caller. CAPI supports at most 20 pixel objects; writes replace the supplied `pixels` list as a whole and mirror its first item into the legacy scalar fields.
 
@@ -64,6 +64,7 @@ Every mutation is a dry run unless `commit=1` is passed. A dry run validates and
 | `campaign.patch` | `id`, `commit`; JSON body | merge a settings fragment through the panel validators |
 | `campaign.set` | `id`, `commit`; JSON body `{ "dot.path": value }` | friendly per-field edit merged through the validators |
 | `campaign.kill-defaults` | `id`, `commit` | remove the author's three dangerous defaults if present |
+| `costs.import` | `commit`; normalized JSON manifest body produced by the CLI | reconcile Meta spend by date plus exact `utm_campaign`; atomic and dry-run by default |
 | `networks.add` / `.update` / `.delete` | `name`/`params`, or `id` (+ optional fields) | manage the global Networks library |
 | `destinations.add` / `.update` / `.delete` | `name`/`base_url`/`network_id`, or `id` | manage the global Destinations library |
 | `landing.upload` | `name`, `commit`; ZIP bytes as the POST body | extract a ZIP into a new landing folder (zip-slip guarded) |
@@ -73,6 +74,8 @@ Every mutation is a dry run unless `commit=1` is passed. A dry run validates and
 | `landing.delete` | `name`, `commit` | delete a landing folder (dry run lists referencing campaigns) |
 
 Mutations run through the same `CampaignService` and validators as the panel save, so the API, the CLI, and the panel share one write path. Domain overlap is checked in dry run and commit alike and refused with `DOMAIN_CONFLICT`. `campaign.create` uses a template with the author's dangerous defaults removed and refuses any template that still references them.
+
+The `costs.import` body contains `rows[]` with `date` (`YYYY-MM-DD`), exact `utm_campaign`, `currency` (`USD`), integer `spend_cents`, and optional Meta campaign ID/link-click metadata. Clients should use `ytds costs import`, which parses and validates the original Meta CSV locally. A commit is refused unless every row matches exactly one TDS campaign; matched click costs are replaced deterministically in one transaction, so rerunning the same manifest is idempotent.
 
 Network and Destination deletion is checked in dry run and commit. Reassigning a referenced Destination to another Network is checked the same way. A Checkout Route reference returns HTTP 409 with `RESOURCE_IN_USE`; its hint identifies the campaign, flow, and step that must be edited first. The Networks/Destinations panel pages apply the same checks when replacing a catalog.
 

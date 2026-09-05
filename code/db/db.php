@@ -652,6 +652,114 @@ class Db
         }
     }
 
+    /**
+     * Deterministically replaces click costs for exact campaign/day/UTM groups. Values are
+     * allocated in 1e-8 USD units so every group sums to the imported spend while repeat runs are
+     * idempotent. All committed groups share one IMMEDIATE transaction.
+     *
+     * @param array<int, array{campaign_id: int, start: int, end: int, utm_campaign: string, spend_cents: int}> $groups
+     * @return array<int, array{matched_clicks: int, changed_clicks: int, cost_before: float, cost_after: float}>
+     */
+    public function reconcile_click_cost_groups(array $groups, bool $commit): array
+    {
+        $run = function (SQLite3 $db) use ($groups, $commit): array {
+            $select = $db->prepare(
+                "SELECT id, cost FROM clicks "
+                . "WHERE campaign_id = :campaign AND time BETWEEN :start AND :end "
+                . "AND json_valid(params) AND json_extract(params, '$.utm_campaign') = :utm ORDER BY id"
+            );
+            $update = $commit ? $db->prepare('UPDATE clicks SET cost = :cost WHERE id = :id') : null;
+            if ($select === false || ($commit && $update === false)) {
+                throw new RuntimeException('Failed to prepare click cost reconciliation');
+            }
+
+            $results = [];
+            foreach ($groups as $group) {
+                $select->reset();
+                $select->clear();
+                $select->bindValue(':campaign', $group['campaign_id'], SQLITE3_INTEGER);
+                $select->bindValue(':start', $group['start'], SQLITE3_INTEGER);
+                $select->bindValue(':end', $group['end'], SQLITE3_INTEGER);
+                $select->bindValue(':utm', $group['utm_campaign'], SQLITE3_TEXT);
+                $query = $select->execute();
+                if ($query === false) {
+                    throw new RuntimeException('Failed to read click cost targets: ' . $db->lastErrorMsg());
+                }
+                $targets = [];
+                $before = 0.0;
+                while ($row = $query->fetchArray(SQLITE3_ASSOC)) {
+                    $targets[] = ['id' => (int)$row['id'], 'cost' => (float)$row['cost']];
+                    $before += (float)$row['cost'];
+                }
+                $count = count($targets);
+                if ($count === 0) {
+                    $results[] = ['matched_clicks' => 0, 'changed_clicks' => 0, 'cost_before' => 0.0, 'cost_after' => 0.0];
+                    continue;
+                }
+
+                $totalUnits = $group['spend_cents'] * 1000000; // one cent = 1,000,000 x 1e-8 USD
+                $baseUnits = intdiv($totalUnits, $count);
+                $remainder = $totalUnits - ($baseUnits * $count);
+                $changed = 0;
+                foreach ($targets as $index => $target) {
+                    $units = $baseUnits + ($index < $remainder ? 1 : 0);
+                    $desired = $units / 100000000;
+                    if (abs($target['cost'] - $desired) <= 0.000000005) {
+                        continue;
+                    }
+                    $changed++;
+                    if ($update !== null) {
+                        $update->reset();
+                        $update->clear();
+                        $update->bindValue(':cost', $desired, SQLITE3_FLOAT);
+                        $update->bindValue(':id', $target['id'], SQLITE3_INTEGER);
+                        if ($update->execute() === false) {
+                            throw new RuntimeException('Failed to update click cost: ' . $db->lastErrorMsg());
+                        }
+                    }
+                }
+                $results[] = [
+                    'matched_clicks' => $count,
+                    'changed_clicks' => $changed,
+                    'cost_before' => $before,
+                    'cost_after' => $group['spend_cents'] / 100,
+                ];
+            }
+            return $results;
+        };
+
+        if ($commit) {
+            return $this->immediate_transaction($run);
+        }
+        return $run($this->open_db(true));
+    }
+
+    /** @return array{clicks: int, uniques: int, costs: float} */
+    public function get_click_cost_group_summary(int $campaignId, int $start, int $end, string $utmCampaign): array
+    {
+        $db = $this->open_db(true);
+        $stmt = $db->prepare(
+            "SELECT COUNT(*) AS clicks, "
+            . "SUM(CASE WHEN unique_flags IS NOT NULL AND (unique_flags & 2) != 0 THEN 1 ELSE 0 END) AS uniques, "
+            . "COALESCE(SUM(cost), 0) AS costs FROM clicks "
+            . "WHERE campaign_id = :campaign AND time BETWEEN :start AND :end "
+            . "AND json_valid(params) AND json_extract(params, '$.utm_campaign') = :utm"
+        );
+        if ($stmt === false) {
+            throw new RuntimeException('Failed to prepare click cost summary');
+        }
+        $stmt->bindValue(':campaign', $campaignId, SQLITE3_INTEGER);
+        $stmt->bindValue(':start', $start, SQLITE3_INTEGER);
+        $stmt->bindValue(':end', $end, SQLITE3_INTEGER);
+        $stmt->bindValue(':utm', $utmCampaign, SQLITE3_TEXT);
+        $result = $stmt->execute();
+        $row = $result === false ? false : $result->fetchArray(SQLITE3_ASSOC);
+        if (!is_array($row)) {
+            throw new RuntimeException('Failed to read click cost summary: ' . $db->lastErrorMsg());
+        }
+        return ['clicks' => (int)$row['clicks'], 'uniques' => (int)$row['uniques'], 'costs' => (float)$row['costs']];
+    }
+
     private function capture_transaction_error(SQLite3 $db): void
     {
         $this->lastTransactionErrorCode = $db->lastErrorCode();

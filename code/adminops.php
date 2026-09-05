@@ -4,6 +4,7 @@ require_once __DIR__ . '/campaignservice.php';
 require_once __DIR__ . '/destinations.php';
 require_once __DIR__ . '/networks.php';
 require_once __DIR__ . '/landings.php';
+require_once __DIR__ . '/costimport.php';
 
 /**
  * Loads a versioned campaign template (code/templates/<name>.json) as a settings array. Templates
@@ -179,6 +180,177 @@ final class AdminOps
             'last_page' => (int)($pageData['last_page'] ?? 1),
             'count' => count($rows),
             'clicks' => $rows,
+        ];
+    }
+
+    /**
+     * Previews or applies campaign/day Meta spend to allowed clicks matched by exact
+     * `params.utm_campaign`.
+     *
+     * @param array{source?: array<string, mixed>, rows?: array<int, array<string, mixed>>} $manifest
+     * @return array<string, mixed>
+     */
+    public function costsImport(array $manifest, bool $commit): array
+    {
+        $input = $manifest['rows'] ?? null;
+        if (!is_array($input) || $input === []) {
+            throw new YtdsOpError('INVALID_ARG', 400, 'cost import requires report rows', 'use costs import --file report.csv');
+        }
+        if (count($input) > MetaCostCsv::MAX_ROWS) {
+            throw new YtdsOpError('INVALID_ARG', 400, 'cost import exceeds the 10000-row limit', 'split the report into smaller files');
+        }
+
+        $sourceRows = count($input);
+        $combined = [];
+        foreach ($input as $raw) {
+            if (!is_array($raw)) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row must be an object', '');
+            }
+            $date = $raw['date'] ?? null;
+            $utm = $raw['utm_campaign'] ?? null;
+            $currency = $raw['currency'] ?? null;
+            $rowSpend = $raw['spend_cents'] ?? null;
+            $metaClicks = $raw['meta_link_clicks'] ?? null;
+            $parsedDate = is_string($date) ? DateTimeImmutable::createFromFormat('!Y-m-d', $date) : false;
+            if ($parsedDate === false || $parsedDate->format('Y-m-d') !== $date) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row has an invalid date', 'expected YYYY-MM-DD');
+            }
+            if (!is_string($utm) || $utm === '' || strlen($utm) > 512 || preg_match('/[\x00-\x1F\x7F]/', $utm) === 1) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row has an invalid utm_campaign', 'use the exact non-empty Meta campaign name');
+            }
+            if ($currency !== 'USD') {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row currency must be USD', 'export or convert the Meta report to USD');
+            }
+            if (!is_int($rowSpend) || $rowSpend < 0 || $rowSpend > MetaCostCsv::MAX_SPEND_CENTS) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row has invalid spend_cents', 'use a non-negative integer amount in USD cents');
+            }
+            if ($metaClicks !== null && (!is_int($metaClicks) || $metaClicks < 0)) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row has invalid meta_link_clicks', 'use a non-negative integer or null');
+            }
+            $key = $date . "\0" . $utm;
+            if (!isset($combined[$key])) {
+                $combined[$key] = $raw;
+                continue;
+            }
+            $combinedSpend = (int)($combined[$key]['spend_cents'] ?? 0) + (int)($raw['spend_cents'] ?? 0);
+            if ($combinedSpend > MetaCostCsv::MAX_SPEND_CENTS) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'combined cost import spend exceeds the safety limit', 'split or verify duplicate campaign/day rows');
+            }
+            $combined[$key]['spend_cents'] = $combinedSpend;
+            $leftClicks = $combined[$key]['meta_link_clicks'] ?? null;
+            $rightClicks = $raw['meta_link_clicks'] ?? null;
+            $combined[$key]['meta_link_clicks'] = $leftClicks === null || $rightClicks === null
+                ? ($leftClicks ?? $rightClicks)
+                : (int)$leftClicks + (int)$rightClicks;
+            if ((string)($combined[$key]['meta_campaign_id'] ?? '') !== (string)($raw['meta_campaign_id'] ?? '')) {
+                $combined[$key]['meta_campaign_id'] = '';
+            }
+        }
+        $input = array_values($combined);
+
+        $campaigns = $this->campaigns->list();
+        $rows = [];
+        $groups = [];
+        $spendCents = 0;
+        $matchedClicks = 0;
+        foreach ($input as $raw) {
+            if (!is_array($raw)) {
+                throw new YtdsOpError('INVALID_ARG', 400, 'cost import row must be an object', '');
+            }
+            $date = (string)($raw['date'] ?? '');
+            $utm = (string)($raw['utm_campaign'] ?? '');
+            $rowSpend = (int)($raw['spend_cents'] ?? -1);
+            $matches = [];
+            foreach ($campaigns as $campaign) {
+                $settings = $this->requireCampaignSettings((int)$campaign['id']);
+                $tz = $this->campaignTimezone($settings);
+                $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date, new DateTimeZone($tz));
+                if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+                    throw new YtdsOpError('INVALID_ARG', 400, 'invalid cost row date: ' . $date, 'expected YYYY-MM-DD');
+                }
+                $from = $parsed->setTime(0, 0)->getTimestamp();
+                $to = $parsed->setTime(23, 59, 59)->getTimestamp();
+                $stat = $this->db->get_click_cost_group_summary((int)$campaign['id'], $from, $to, $utm);
+                if ($stat['clicks'] > 0) {
+                    $matches[] = ['campaign' => $campaign, 'timezone' => $tz, 'stat' => $stat];
+                }
+            }
+            if (count($matches) > 1) {
+                throw new YtdsOpError('COST_MATCH_AMBIGUOUS', 409, 'cost row matches multiple TDS campaigns: ' . $utm . ' on ' . $date, 'make utm_campaign unique across TDS campaigns');
+            }
+            $match = $matches[0] ?? null;
+            $clicks = (int)($match['stat']['clicks'] ?? 0);
+            $groupIndex = null;
+            if ($match !== null) {
+                $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date, new DateTimeZone($match['timezone']));
+                $groupIndex = count($groups);
+                $groups[] = [
+                    'campaign_id' => (int)$match['campaign']['id'],
+                    'start' => $parsed->setTime(0, 0)->getTimestamp(),
+                    'end' => $parsed->setTime(23, 59, 59)->getTimestamp(),
+                    'utm_campaign' => $utm,
+                    'spend_cents' => $rowSpend,
+                ];
+            }
+            $spendCents += $rowSpend;
+            $matchedClicks += $clicks;
+            $rows[] = [
+                'date' => $date,
+                'utm_campaign' => $utm,
+                'meta_campaign_id' => (string)($raw['meta_campaign_id'] ?? ''),
+                'currency' => 'USD',
+                'spend' => self::formatCents($rowSpend),
+                'meta_link_clicks' => $raw['meta_link_clicks'] ?? null,
+                'tds_campaign_id' => $match === null ? null : (int)$match['campaign']['id'],
+                'tds_campaign_name' => $match === null ? null : (string)$match['campaign']['name'],
+                'timezone' => $match['timezone'] ?? null,
+                'matched_clicks' => $clicks,
+                'matched_uniques' => (int)($match['stat']['uniques'] ?? 0),
+                'current_cost' => number_format((float)($match['stat']['costs'] ?? 0), 2, '.', ''),
+                '_group_index' => $groupIndex,
+            ];
+        }
+
+        $matchedRows = count(array_filter($rows, static fn(array $row): bool => $row['matched_clicks'] > 0));
+        if ($commit && $matchedRows !== count($rows)) {
+            throw new YtdsOpError('COST_IMPORT_NOT_READY', 409, 'cost import has unmatched rows; nothing was written', 'run without --yes and fix every unmatched date + utm_campaign');
+        }
+        $reconciled = $this->db->reconcile_click_cost_groups($groups, $commit);
+        $changedClicks = 0;
+        $costBefore = 0.0;
+        $costAfter = 0.0;
+        foreach ($rows as &$row) {
+            $index = $row['_group_index'];
+            unset($row['_group_index']);
+            if ($index === null) {
+                $row['changed_clicks'] = 0;
+                continue;
+            }
+            $change = $reconciled[$index];
+            $row['changed_clicks'] = $change['changed_clicks'];
+            $row['cost_after'] = number_format($change['cost_after'], 2, '.', '');
+            $changedClicks += $change['changed_clicks'];
+            $costBefore += $change['cost_before'];
+            $costAfter += $change['cost_after'];
+        }
+        unset($row);
+        return [
+            'dry_run' => !$commit,
+            'action' => 'costs.import',
+            'ready' => $matchedRows === count($rows),
+            'source' => $manifest['source'] ?? [],
+            'summary' => [
+                'source_rows' => $sourceRows,
+                'input_rows' => count($rows),
+                'matched_rows' => $matchedRows,
+                'unmatched_rows' => count($rows) - $matchedRows,
+                'matched_clicks' => $matchedClicks,
+                'changed_clicks' => $changedClicks,
+                'spend' => self::formatCents($spendCents),
+                'cost_before' => number_format($costBefore, 2, '.', ''),
+                'cost_after' => number_format($costAfter, 2, '.', ''),
+            ],
+            'rows' => $rows,
         ];
     }
 
@@ -897,5 +1069,10 @@ final class AdminOps
             }
         }
         return array_keys($out);
+    }
+
+    private static function formatCents(int $cents): string
+    {
+        return sprintf('%d.%02d', intdiv($cents, 100), abs($cents % 100));
     }
 }
