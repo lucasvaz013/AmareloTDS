@@ -293,7 +293,7 @@ Construídas neste fork (vivem em `staging`), com o design em plan docs commitad
 | Networks + Destinations | Bibliotecas globais (`common.settings`) que alimentam `{link:N}` | `code/networks.php`, `code/destinations.php` | `docs/en/networks-and-destinations.md` |
 | Checkout Routes | Experimento ponderado Network→Destinations por step, sticky e congelado no click | `code/checkoutroutes.php`, `code/experiments.php` | `docs/en/networks-and-destinations.md` |
 | Standard Events | Coleta facilitada de `offer_revealed`/`checkout_click` no render, sem editar a landing | `code/scripts/*tracking.js`, `code/htmlprocessing.php` | `docs/en/events.md` |
-| ytds CLI (fases 0–4) | Operação por agentes — ver **§15** e `docs/en/ytds-cli.md`. Local in‑process (`--env local`) ou remoto via `/api/admin.php` (Bearer `adminApiToken`). Reads + mutação segura (`--dry-run` padrão, `--yes` commita) sobre `campaign`/`networks`/`destinations`/`landing`; landing também tem download/edit/replace e pack/verify de ZIP. | `bin/ytds` + `cli/`, `code/adminops.php`, `code/api/admin.php` | `docs/en/ytds-cli.md`, `admin-api.md` |
+| ytds CLI (fases 0–4) | Operação por agentes — ver **§15** e `docs/en/ytds-cli.md`. Local/remote, reads + mutação segura de campanhas/catálogos/landings e import retroativo de custos Meta por data+`utm_campaign`. | `bin/ytds` + `cli/`, `code/adminops.php`, `code/api/admin.php` | `docs/en/ytds-cli.md`, `admin-api.md` |
 
 **Padrão "página‑registro":** Integrations, Landings, Networks e Destinations seguem o mesmo
 molde; a próxima feature desse tipo deve copiá‑lo, sem inventar uma 2ª convenção: botão em
@@ -384,7 +384,7 @@ de comandos no §9; referência exaustiva em `docs/en/ytds-cli.md`, procedimento
   `/api/admin.php`, Bearer `adminApiToken` de `~/.config/ytds/config.json`). Sempre nomeie o
   `--env`; `prod` é produção, sem experimento.
 - **Mutação = dry‑run por padrão.** Todo write (`create\|clone\|rename\|delete\|domains\|patch\|kill-defaults`,
-  `networks/destinations add\|update\|delete`, `landing upload\|edit\|replace\|duplicate\|delete`) valida e imprime
+  `costs import`, `networks/destinations add\|update\|delete`, `landing upload\|edit\|replace\|duplicate\|delete`) valida e imprime
   before/after sem gravar; só `--yes` commita. Overlap de domínio → exit 5 em dry‑run e commit.
 - **Loop seguro.** ler (`campaign get`) → dry‑run → conferir diff → `--yes`. Diff maior que o
   esperado: **não** commita, investiga.
@@ -394,6 +394,9 @@ de comandos no §9; referência exaustiva em `docs/en/ytds-cli.md`, procedimento
   inteira, mutuamente exclusivos); `kill-defaults` remove os 3 defaults do autor (Guardrail #9);
   `clicks` filtra com `--filter field:op:value` (+ `--filter-cond`), `--param KEY`, `--sort`/`--dir`,
   `--page`, `--search`.
+- **Custos Meta retroativos.** `costs import --file report.csv`: CSV USD, conta no timezone da
+  campanha; casa data+`params.utm_campaign` exatos, exige 100% das linhas antes de `--yes`, substitui
+  custos de forma idempotente e grava o arquivo inteiro numa transação.
 
 ## 16. Como escrever este `AGENTS.md`
 
