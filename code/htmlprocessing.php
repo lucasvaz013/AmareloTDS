@@ -37,6 +37,36 @@ function resolve_link_macros(string $html, array $links, callable $resolve): str
         return '#';
     }, $html);
 }
+
+/**
+ * Returns the resolved HTTP(S) destinations for {link:N} tokens that are
+ * actually present in this rendered landing variant.
+ *
+ * @param array<array{n: int, url: string}> $links
+ * @return list<string>
+ */
+function checkout_urls_for_link_macros(string $html, array $links, callable $resolve): array
+{
+    preg_match_all('/\{link:(\d+)\}/', $html, $matches);
+    $usedSlots = array_fill_keys(array_map('intval', $matches[1] ?? []), true);
+    if ($usedSlots === []) {
+        return [];
+    }
+
+    $urls = [];
+    foreach ($links as $link) {
+        $slot = (int)($link['n'] ?? 0);
+        $url = (string)($link['url'] ?? '');
+        if (!isset($usedSlots[$slot]) || $url === '') {
+            continue;
+        }
+        $resolved = (string)$resolve($url);
+        if (preg_match('#^https?://#i', $resolved) === 1) {
+            $urls[$resolved] = $resolved;
+        }
+    }
+    return array_values($urls);
+}
 function load_content_with_include($url): string
 {
     ob_start();
@@ -219,12 +249,18 @@ function load_step(Campaign $c, FlowSettings $flow, int $stepIndex, string $fold
     $html = apply_mvt_assignment($html, $mvtSettings, $mvtAssignment);
     $frozenCheckoutLinks = checkout_links_from_click_params($click['params'] ?? [], $stepIndex);
     $links = $frozenCheckoutLinks ?? ($step->getFolder($folderName)?->links ?? []);
+    $linkResolver = $frozenCheckoutLinks === null
+        ? fn(string $url): string => $mp->replace_url_macros($url)
+        : static fn(string $url): string => $url;
+    $checkoutUrls = checkout_urls_for_link_macros(
+        $html,
+        $links,
+        fn(string $url): string => $mp->replace_html_macros($linkResolver($url))
+    );
     $html = resolve_link_macros(
         $html,
         $links,
-        $frozenCheckoutLinks === null
-            ? fn(string $url): string => $mp->replace_url_macros($url)
-            : static fn(string $url): string => $url
+        $linkResolver
     );
     $html = $mp->replace_html_macros($html);
     $html = fix_phone_and_name($html);
@@ -244,7 +280,8 @@ function load_step(Campaign $c, FlowSettings $flow, int $stepIndex, string $fold
             $c->events,
             $clickid,
             $stepIndex,
-            $folderName
+            $folderName,
+            $checkoutUrls
         );
     }
     $html = add_conversion_tracking($html, $c->conversions, $clickid);
@@ -307,14 +344,33 @@ function add_event_tracking(
     EventSettings $events,
     string $clickid,
     int $stepIndex,
-    string $variant
+    string $variant,
+    array $checkoutUrls = []
 ): string {
     $scrollEnabled = $events->scrollTrackingUse && $events->scrollTrackingThresholds !== [];
     $timeEnabled = $events->timeTrackingUse && $events->timeTrackingThresholds !== [];
-    $customEnabled = $events->customEventNames !== [];
+    $offerRevealedEnabled = $events->offerRevealedTrackingUse;
+    $checkoutClickEnabled = $events->checkoutClickTrackingUse;
+    $callableEventNames = [];
+    if ($offerRevealedEnabled) {
+        $callableEventNames[] = 'offer_revealed';
+    }
+    if ($checkoutClickEnabled) {
+        $callableEventNames[] = 'checkout_click';
+    }
+    $callableEventNames = array_values(array_unique(array_merge(
+        $callableEventNames,
+        $events->customEventNames
+    )));
+    $customEnabled = $callableEventNames !== [];
     $performanceEnabled = $events->performanceTrackingUse && !is_js_connect_request();
 
-    if (!$scrollEnabled && !$timeEnabled && !$customEnabled && !$performanceEnabled) {
+    if (
+        !$scrollEnabled
+        && !$timeEnabled
+        && !$customEnabled
+        && !$performanceEnabled
+    ) {
         return $html;
     }
 
@@ -359,7 +415,28 @@ function add_event_tracking(
             $html,
             'customeventtracking.js',
             ['{CUSTOM_EVENTS_JSON}'],
-            [json_encode($events->customEventNames)]
+            [json_encode($callableEventNames)]
+        );
+    }
+
+    if ($offerRevealedEnabled) {
+        $html = inject_event_script($html, 'offerrevealedtracking.js');
+    }
+
+    if ($checkoutClickEnabled) {
+        $checkoutUrlsJson = json_encode(
+            array_values(array_unique($checkoutUrls)),
+            JSON_HEX_TAG
+                | JSON_HEX_AMP
+                | JSON_HEX_APOS
+                | JSON_HEX_QUOT
+                | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+        $html = inject_event_script(
+            $html,
+            'checkoutclicktracking.js',
+            ['{CHECKOUT_URLS_JSON}'],
+            [$checkoutUrlsJson]
         );
     }
 

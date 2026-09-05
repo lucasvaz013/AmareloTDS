@@ -10,6 +10,8 @@ final class EventTrackingAssetsTest extends TestCase
         $scroll = file_get_contents(__DIR__ . '/../../code/scripts/scrolltracking.js');
         $visibleTime = file_get_contents(__DIR__ . '/../../code/scripts/visibletimetracking.js');
         $custom = file_get_contents(__DIR__ . '/../../code/scripts/customeventtracking.js');
+        $offerRevealed = file_get_contents(__DIR__ . '/../../code/scripts/offerrevealedtracking.js');
+        $checkoutClick = file_get_contents(__DIR__ . '/../../code/scripts/checkoutclicktracking.js');
         $performance = file_get_contents(__DIR__ . '/../../code/scripts/performancetracking.js');
 
         $this->assertStringContainsString('event: eventName', $transport);
@@ -31,6 +33,13 @@ final class EventTrackingAssetsTest extends TestCase
         $this->assertStringContainsString('scheduleDeadline', $visibleTime);
         $this->assertStringContainsString('global.ytdsEvent = function', $custom);
         $this->assertStringContainsString('return transport.sendEvent(normalizedName)', $custom);
+        $this->assertStringContainsString("transport.sendEvent('offer_revealed')", $offerRevealed);
+        $this->assertStringContainsString("'[data-ytds-offer]'", $offerRevealed);
+        $this->assertStringContainsString("'.delay-hidden'", $offerRevealed);
+        $this->assertStringContainsString('MutationObserver', $offerRevealed);
+        $this->assertStringContainsString("transport.sendEvent('checkout_click')", $checkoutClick);
+        $this->assertStringContainsString("'[data-ytds-checkout], a[href]'", $checkoutClick);
+        $this->assertStringContainsString('{CHECKOUT_URLS_JSON}', $checkoutClick);
 
         $this->assertStringContainsString(
             'Math.max(0, 10000 - performance.now())',

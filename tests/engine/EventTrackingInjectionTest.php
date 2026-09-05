@@ -96,6 +96,94 @@ final class EventTrackingInjectionTest extends TestCase
         $this->assertStringNotContainsString('var webVitals=', $html);
     }
 
+    public function testStandardHelpersInjectCollectorsAndShareTheCustomApiAllowlist(): void
+    {
+        $events = EventSettings::fromArray([
+            'offer_revealed' => ['use' => true],
+            'checkout_click' => ['use' => true],
+            'custom' => ['offer_revealed', 'cta_click'],
+        ]);
+
+        $html = add_event_tracking(
+            '<html><body><div class="delay-hidden">Offer</div></body></html>',
+            $events,
+            'click-standard',
+            0,
+            'landing-standard',
+            ['https://checkout.example/one?sub=1']
+        );
+
+        $this->assertStringContainsString('global.ytdsEvent = function', $html);
+        $this->assertStringContainsString(
+            '["offer_revealed","checkout_click","cta_click"]',
+            $html
+        );
+        $this->assertStringContainsString("transport.sendEvent('offer_revealed')", $html);
+        $this->assertStringContainsString("transport.sendEvent('checkout_click')", $html);
+        $this->assertStringContainsString(
+            '["https:\\/\\/checkout.example\\/one?sub=1"]',
+            $html
+        );
+    }
+
+    public function testEachStandardHelperCanBeInjectedIndependently(): void
+    {
+        $offerOnly = add_event_tracking(
+            '<html><body></body></html>',
+            EventSettings::fromArray(['offer_revealed' => ['use' => true]]),
+            'click-offer',
+            0,
+            'landing-offer'
+        );
+        $this->assertStringContainsString("transport.sendEvent('offer_revealed')", $offerOnly);
+        $this->assertStringNotContainsString("transport.sendEvent('checkout_click')", $offerOnly);
+
+        $checkoutOnly = add_event_tracking(
+            '<html><body></body></html>',
+            EventSettings::fromArray(['checkout_click' => ['use' => true]]),
+            'click-checkout',
+            0,
+            'landing-checkout',
+            []
+        );
+        $this->assertStringContainsString("transport.sendEvent('checkout_click')", $checkoutOnly);
+        $this->assertStringNotContainsString("transport.sendEvent('offer_revealed')", $checkoutOnly);
+    }
+
+    public function testCheckoutCatalogUsesOnlyRenderedHttpSlots(): void
+    {
+        $links = [
+            ['n' => 1, 'url' => 'https://checkout.example/unused'],
+            ['n' => 2, 'url' => 'javascript:alert(1)'],
+            ['n' => 3, 'url' => 'https://checkout.example/used'],
+        ];
+
+        self::assertSame(
+            ['https://checkout.example/used'],
+            checkout_urls_for_link_macros(
+                '<a href="{link:2}">Bad</a><a href="{link:3}">Buy</a>',
+                $links,
+                static fn(string $url): string => $url
+            )
+        );
+    }
+
+    public function testCheckoutCatalogIsSafeJavaScriptWithInvalidUtf8AndHtmlTokens(): void
+    {
+        $html = add_event_tracking(
+            '<html><body></body></html>',
+            EventSettings::fromArray(['checkout_click' => ['use' => true]]),
+            'click-json',
+            0,
+            'landing-json',
+            ["https://checkout.example/\xB1", 'https://checkout.example/</script><script>alert(1)</script>']
+        );
+
+        self::assertStringContainsString('\\ufffd', $html);
+        self::assertStringContainsString('\\u003C\\/script\\u003E', $html);
+        self::assertStringNotContainsString('</script><script>alert(1)</script>', $html);
+    }
+
     public function testPerformanceInjectsPinnedBundleAndAbsoluteCollector(): void
     {
         $events = EventSettings::fromArray([
@@ -163,6 +251,8 @@ final class EventTrackingInjectionTest extends TestCase
 
         $events = EventSettings::fromArray([
             'performance' => ['use' => true],
+            'offer_revealed' => ['use' => true],
+            'checkout_click' => ['use' => true],
             'custom' => ['cta_click'],
         ]);
 
@@ -176,6 +266,8 @@ final class EventTrackingInjectionTest extends TestCase
 
         $this->assertStringContainsString('__yellowTdsEventTransport', $html);
         $this->assertStringContainsString('global.ytdsEvent = function', $html);
+        $this->assertStringContainsString("transport.sendEvent('offer_revealed')", $html);
+        $this->assertStringContainsString("transport.sendEvent('checkout_click')", $html);
         $this->assertStringNotContainsString('var webVitals=', $html);
         $this->assertStringNotContainsString('requiredMetrics', $html);
     }
@@ -218,7 +310,7 @@ final class EventTrackingInjectionTest extends TestCase
         self::assertTrue(mkdir($nestedPath, 0755, true));
         file_put_contents(
             $landingPath . DIRECTORY_SEPARATOR . 'index.html',
-            '<html><head></head><body>Root landing</body></html>'
+            '<html><head></head><body><a href="{link:1}">Buy</a></body></html>'
         );
         file_put_contents(
             $nestedPath . DIRECTORY_SEPARATOR . 'page.html',
@@ -261,6 +353,8 @@ final class EventTrackingInjectionTest extends TestCase
                 'scroll' => ['use' => true, 'thresholds' => [50]],
                 'time' => ['use' => true, 'thresholds' => [30]],
                 'performance' => ['use' => true],
+                'offer_revealed' => ['use' => true],
+                'checkout_click' => ['use' => true],
                 'custom' => ['cta_click'],
             ];
             $campaign = new Campaign(1, $settings);
@@ -273,6 +367,10 @@ final class EventTrackingInjectionTest extends TestCase
                         'loadtype' => 'base',
                         'weight' => 100,
                         'mvt' => ['enabled' => false, 'tests' => []],
+                        'links' => [[
+                            'n' => 1,
+                            'url' => 'https://checkout.example/order/{clickid}?cid={clickid}',
+                        ]],
                     ]],
                     'redirect' => ['urls' => [], 'type' => 302],
                 ]],
@@ -284,6 +382,14 @@ final class EventTrackingInjectionTest extends TestCase
                 0,
                 'landing-events',
                 'click-root'
+            );
+            $directRoot = load_step(
+                $campaign,
+                $flow,
+                0,
+                'landing-events',
+                'click-direct-root',
+                true
             );
             $nestedHtml = load_step(
                 $campaign,
@@ -309,6 +415,16 @@ final class EventTrackingInjectionTest extends TestCase
             self::assertStringContainsString('requestAnimationFrame(reportDepth)', $root);
             self::assertStringContainsString('visibleMilliseconds', $root);
             self::assertStringContainsString('var webVitals=function', $root);
+            self::assertStringContainsString(
+                '["https:\\/\\/checkout.example\\/order\\/click-root?cid=click-root"]',
+                $root
+            );
+            self::assertStringNotContainsString('{clickid}', $root);
+            self::assertStringContainsString('__yellowTdsEventTransport', $directRoot);
+            self::assertStringContainsString(
+                '["https:\\/\\/checkout.example\\/order\\/click-direct-root?cid=click-direct-root"]',
+                $directRoot
+            );
             self::assertStringNotContainsString('__yellowTdsEventTransport', $nestedHtml);
             self::assertStringNotContainsString('__yellowTdsEventTransport', $nestedPhp);
         } finally {

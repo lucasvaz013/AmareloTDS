@@ -663,6 +663,8 @@ class EventSettings implements JsonSerializable
     /** @var list<int> */
     public array $timeTrackingThresholds;
     public bool $performanceTrackingUse;
+    public bool $offerRevealedTrackingUse;
+    public bool $checkoutClickTrackingUse;
     /** @var list<string> */
     public array $customEventNames;
 
@@ -672,6 +674,12 @@ class EventSettings implements JsonSerializable
         $scroll = is_array($settings['scroll'] ?? null) ? $settings['scroll'] : [];
         $time = is_array($settings['time'] ?? null) ? $settings['time'] : [];
         $performance = is_array($settings['performance'] ?? null) ? $settings['performance'] : [];
+        $offerRevealed = is_array($settings['offer_revealed'] ?? null)
+            ? $settings['offer_revealed']
+            : [];
+        $checkoutClick = is_array($settings['checkout_click'] ?? null)
+            ? $settings['checkout_click']
+            : [];
         $events = new EventSettings();
         $events->scrollTrackingUse = self::toBool($scroll['use'] ?? false);
         $events->scrollTrackingThresholds = self::normalizeThresholds(
@@ -684,6 +692,8 @@ class EventSettings implements JsonSerializable
             86400
         );
         $events->performanceTrackingUse = self::toBool($performance['use'] ?? false);
+        $events->offerRevealedTrackingUse = self::toBool($offerRevealed['use'] ?? false);
+        $events->checkoutClickTrackingUse = self::toBool($checkoutClick['use'] ?? false);
         $events->customEventNames = self::normalizeCustomEventNames($settings['custom'] ?? []);
         return $events;
     }
@@ -701,6 +711,12 @@ class EventSettings implements JsonSerializable
             foreach ($this->timeTrackingThresholds as $threshold) {
                 $names['stay_' . $threshold . 's'] = true;
             }
+        }
+        if ($this->offerRevealedTrackingUse) {
+            $names['offer_revealed'] = true;
+        }
+        if ($this->checkoutClickTrackingUse) {
+            $names['checkout_click'] = true;
         }
         foreach ($this->customEventNames as $name) {
             $names[$name] = true;
@@ -734,6 +750,12 @@ class EventSettings implements JsonSerializable
             ],
             'performance' => [
                 'use' => $this->performanceTrackingUse,
+            ],
+            'offer_revealed' => [
+                'use' => $this->offerRevealedTrackingUse,
+            ],
+            'checkout_click' => [
+                'use' => $this->checkoutClickTrackingUse,
             ],
             'custom' => $this->customEventNames,
         ];

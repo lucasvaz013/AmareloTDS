@@ -117,6 +117,21 @@ function normalize_event_input(array &$input): ?string
     }
     $normalized['performance'] = ['use' => $performanceEnabled];
 
+    foreach ([
+        'offer_revealed' => 'Offer-revealed',
+        'checkout_click' => 'Checkout-click',
+    ] as $key => $label) {
+        $section = $input['events'][$key] ?? [];
+        if (!is_array($section)) {
+            return $label . ' event settings must be an object.';
+        }
+        $enabled = normalize_event_boolean($section['use'] ?? false);
+        if ($enabled === null) {
+            return $label . ' event switch is invalid.';
+        }
+        $normalized[$key] = ['use' => $enabled];
+    }
+
     $custom = $input['events']['custom'] ?? [];
     if (!is_array($custom)) {
         return 'Custom events must be a list.';

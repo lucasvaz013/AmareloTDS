@@ -23,6 +23,8 @@ final class EventStorageTest extends TestCase
                 'scroll' => ['use' => true, 'thresholds' => [50]],
                 'time' => ['use' => true, 'thresholds' => [60]],
                 'performance' => ['use' => true],
+                'offer_revealed' => ['use' => true],
+                'checkout_click' => ['use' => true],
                 'custom' => ['cta_click'],
             ],
         ]);
@@ -81,8 +83,12 @@ final class EventStorageTest extends TestCase
             'scroll' => ['use' => true, 'thresholds' => [75, 50, 75, 101]],
             'time' => ['use' => true, 'thresholds' => [60, 0, 86401]],
             'performance' => ['use' => true],
+            'offer_revealed' => ['use' => true],
+            'checkout_click' => ['use' => true],
             'custom' => [
                 'cta_click',
+                'offer_revealed',
+                'checkout_click',
                 'CTA_CLICK',
                 'performance',
                 'performance_lcp',
@@ -94,14 +100,23 @@ final class EventStorageTest extends TestCase
             ],
         ]);
 
-        self::assertSame(['scroll_50', 'scroll_75', 'stay_60s', 'cta_click'], $settings->getConfiguredEventNames());
+        self::assertSame(
+            ['scroll_50', 'scroll_75', 'stay_60s', 'offer_revealed', 'checkout_click', 'cta_click'],
+            $settings->getConfiguredEventNames()
+        );
         self::assertTrue($settings->accepts('cta_click'));
+        self::assertTrue($settings->accepts('offer_revealed'));
+        self::assertTrue($settings->accepts('checkout_click'));
         self::assertFalse($settings->accepts('performance_lcp'));
         self::assertFalse($settings->accepts('scroll_42'));
         self::assertFalse($settings->accepts('stay_45s'));
         self::assertTrue(EventSettings::isReservedEventName('scroll_999'));
         self::assertTrue(EventSettings::isReservedEventName('stay_999999s'));
         self::assertTrue($settings->performanceTrackingUse);
+        self::assertTrue($settings->offerRevealedTrackingUse);
+        self::assertTrue($settings->checkoutClickTrackingUse);
+        self::assertContains('offer_revealed', $settings->customEventNames);
+        self::assertContains('checkout_click', $settings->customEventNames);
     }
 
     public function testEventSettingsCapCollectorAndCustomEventCounts(): void
@@ -148,8 +163,20 @@ final class EventStorageTest extends TestCase
             Db::STEP_EVENT_NOT_ALLOWED,
             $this->db->save_step_event('click-one', 0, 'landing-a', 'stay_45s', 500)
         );
+        self::assertSame(
+            Db::STEP_EVENT_CREATED,
+            $this->db->save_step_event('click-one', 0, 'landing-a', 'offer_revealed', 1500)
+        );
+        self::assertSame(
+            Db::STEP_EVENT_CREATED,
+            $this->db->save_step_event('click-one', 0, 'landing-a', 'checkout_click', 1800)
+        );
 
-        self::assertSame(['scroll_50' => 1200], $this->storedEvents());
+        self::assertSame([
+            'scroll_50' => 1200,
+            'offer_revealed' => 1500,
+            'checkout_click' => 1800,
+        ], $this->storedEvents());
         self::assertSame(200, amarelotds_events_status_for_result(Db::STEP_EVENT_CREATED));
         self::assertSame(422, amarelotds_events_status_for_result(Db::STEP_EVENT_NOT_ALLOWED));
     }

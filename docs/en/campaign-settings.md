@@ -63,7 +63,7 @@ Backfix, redirects, and image lazy loading use the same explicit **Off/On** swit
 
 ## Events
 
-This section configures enabled scroll-depth and visible-time thresholds plus the allowlist for custom browser events. Only those enabled `scroll_*`, `stay_*`, and custom events are available in the **Events** searchable chip field of an S2S rule. Performance/RUM metrics are not S2S events. See [Events](events.md) for collection semantics.
+This section configures scroll-depth and visible-time thresholds, the standard `offer_revealed` and `checkout_click` helpers, and the allowlist for custom browser events. Enabled standard helpers, `scroll_*`, `stay_*`, and custom events are available in the **Events** searchable chip field of an S2S rule. Performance/RUM metrics are not S2S events. See [Events](events.md) for collection semantics and landing marker contracts.
 
 ## Misc
 
@@ -77,4 +77,4 @@ This section contains the campaign status catalog, transaction-ID deduplication,
 
 The Postbacks section contains Key protection and outgoing S2S rules. With **Key protection** enabled, an incoming postback must include `pbkey`; list accepted values as comma-separated entries in **Allowed key values**. Rejected postbacks are masked as `404 Not Found` outside Debug Mode.
 
-Each S2S rule has two searchable chip fields: **Conversion statuses** from the Conversions catalog and **Events** from enabled scroll/time/custom browser events. They use OR semantics: any selected status or event is enough to run the rule. See [Conversions and Postbacks](postbacks.md) for macros, one-time browser-event delivery, and fire-and-forget behavior for event-triggered S2S only.
+Each S2S rule has two searchable chip fields: **Conversion statuses** from the Conversions catalog and **Events** from enabled standard, scroll/time, and custom browser events. They use OR semantics: any selected status or event is enough to run the rule. See [Conversions and Postbacks](postbacks.md) for macros, one-time browser-event delivery, and fire-and-forget behavior for event-triggered S2S only.

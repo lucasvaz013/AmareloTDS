@@ -149,8 +149,14 @@ class AvailableColumns
                 $ordinaryEvents['stay_' . $threshold . 's'] = "Visible {$threshold}s";
             }
         }
+        if ($campaign->events->offerRevealedTrackingUse) {
+            $ordinaryEvents['offer_revealed'] = 'Offer revealed';
+        }
+        if ($campaign->events->checkoutClickTrackingUse) {
+            $ordinaryEvents['checkout_click'] = 'Checkout click';
+        }
         foreach ($campaign->events->customEventNames as $eventName) {
-            $ordinaryEvents[$eventName] = ucwords(str_replace('_', ' ', $eventName));
+            $ordinaryEvents[$eventName] ??= ucwords(str_replace('_', ' ', $eventName));
         }
 
         foreach ($ordinaryEvents as $eventName => $title) {

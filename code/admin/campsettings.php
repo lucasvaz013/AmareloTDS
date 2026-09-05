@@ -6,7 +6,42 @@ require_once __DIR__ . '/timezones.php';
 require_once __DIR__ . '/../paths.php';
 require_once __DIR__ . '/../abtest.php';
 require_once __DIR__ . '/../destinations.php';
+require_once __DIR__ . '/../eventcompatibility.php';
 global $c, $db, $campId;
+
+$eventLandingCompatibility = [];
+$landingRoot = realpath(dirname(__DIR__) . '/' . get_cache_path('landings'));
+foreach ($c->black->flows as $eventFlow) {
+    foreach ($eventFlow->steps as $eventStep) {
+        if ($eventStep->action !== 'folder') {
+            continue;
+        }
+        foreach ($eventStep->folders as $eventFolder) {
+            if (isset($eventLandingCompatibility[$eventFolder->name])) {
+                continue;
+            }
+            $candidate = $landingRoot === false
+                ? false
+                : realpath($landingRoot . DIRECTORY_SEPARATOR . $eventFolder->name);
+            if (
+                $candidate === false
+                || $landingRoot === false
+                || !str_starts_with($candidate . DIRECTORY_SEPARATOR, $landingRoot . DIRECTORY_SEPARATOR)
+            ) {
+                $eventLandingCompatibility[$eventFolder->name] = [
+                    'status' => 'missing_index',
+                    'offer_method' => 'missing',
+                    'offer_candidates' => 0,
+                    'checkout_link_slots' => [],
+                    'checkout_markers' => 0,
+                ];
+                continue;
+            }
+            $eventLandingCompatibility[$eventFolder->name] = analyze_landing_event_compatibility($candidate);
+        }
+    }
+}
+ksort($eventLandingCompatibility);
 ?>
 <!doctype html>
 <html lang="en">
@@ -1046,6 +1081,78 @@ global $c, $db, $campId;
                     </span>
                 </label>
             </div>
+            </div>
+
+            <div class="flow-group">
+            <span class="flow-group-title">Offer revealed</span>
+            <div class="campaign-setting-row">
+                <div class="campaign-setting-label events-setting-label">
+                    <span>Track when the delayed offer becomes visible</span>
+                    <small>Uses <code>data-ytds-offer</code>, or automatically uses the only <code>.delay-hidden</code> block.</small>
+                </div>
+                <input type="hidden" id="events-offer-revealed-use" name="events.offer_revealed.use" value="<?= $c->events->offerRevealedTrackingUse ? 'true' : 'false' ?>" />
+                <label class="campaign-switch" for="events-offer-revealed-toggle">
+                    <input type="checkbox" id="events-offer-revealed-toggle" class="campaign-switch-input" data-value-target="events-offer-revealed-use" aria-label="Track offer revealed" <?= $c->events->offerRevealedTrackingUse ? 'checked' : '' ?> />
+                    <span class="campaign-switch-track" aria-hidden="true">
+                        <span class="campaign-switch-option campaign-switch-option-off">Off</span>
+                        <span class="campaign-switch-option campaign-switch-option-on">On</span>
+                        <span class="campaign-switch-thumb"></span>
+                    </span>
+                </label>
+            </div>
+            </div>
+
+            <div class="flow-group">
+            <span class="flow-group-title">Checkout click</span>
+            <div class="campaign-setting-row">
+                <div class="campaign-setting-label events-setting-label">
+                    <span>Track checkout CTA activation</span>
+                    <small>Detects resolved <code>{link:N}</code> destinations and explicit <code>data-ytds-checkout</code> controls. This measures intent, not checkout arrival.</small>
+                </div>
+                <input type="hidden" id="events-checkout-click-use" name="events.checkout_click.use" value="<?= $c->events->checkoutClickTrackingUse ? 'true' : 'false' ?>" />
+                <label class="campaign-switch" for="events-checkout-click-toggle">
+                    <input type="checkbox" id="events-checkout-click-toggle" class="campaign-switch-input" data-value-target="events-checkout-click-use" aria-label="Track checkout click" <?= $c->events->checkoutClickTrackingUse ? 'checked' : '' ?> />
+                    <span class="campaign-switch-track" aria-hidden="true">
+                        <span class="campaign-switch-option campaign-switch-option-off">Off</span>
+                        <span class="campaign-switch-option campaign-switch-option-on">On</span>
+                        <span class="campaign-switch-thumb"></span>
+                    </span>
+                </label>
+            </div>
+            </div>
+
+            <div class="flow-group event-landing-compatibility">
+                <span class="flow-group-title">Landing compatibility</span>
+                <?php if ($eventLandingCompatibility === []) { ?>
+                <div class="events-empty-state">No local landing folders are configured in this campaign.</div>
+                <?php } else { ?>
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm align-middle">
+                        <thead><tr><th>Landing</th><th>Offer revealed</th><th>Checkout click</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($eventLandingCompatibility as $eventLandingName => $compatibility) {
+                            $offerLabel = match ($compatibility['offer_method']) {
+                                'explicit' => 'Ready — data-ytds-offer',
+                                'automatic' => 'Ready — one .delay-hidden',
+                                'ambiguous' => 'Needs data-ytds-offer (multiple .delay-hidden)',
+                                default => 'No offer block detected',
+                            };
+                            $checkoutCount = count($compatibility['checkout_link_slots']) + (int)$compatibility['checkout_markers'];
+                            $checkoutLabel = $checkoutCount > 0
+                                ? $checkoutCount . ' source' . ($checkoutCount === 1 ? '' : 's') . ' detected'
+                                : 'Needs {link:N} or data-ytds-checkout';
+                        ?>
+                        <tr>
+                            <td><code><?= htmlspecialchars($eventLandingName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></code></td>
+                            <td><?= htmlspecialchars($offerLabel, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                            <td><?= htmlspecialchars($checkoutLabel, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></td>
+                        </tr>
+                        <?php } ?>
+                        </tbody>
+                    </table>
+                </div>
+                <small>This scan is advisory and is refreshed whenever Campaign Settings is opened. Dynamic PHP, MVT, and cross-origin iframes may require explicit markers.</small>
+                <?php } ?>
             </div>
 
             <div class="flow-group">

@@ -14,7 +14,9 @@ final class CampaignEventValidationTest extends TestCase
                 'scroll' => ['use' => 'true', 'thresholds' => '90, 50, 50'],
                 'time' => ['use' => 'false', 'thresholds' => ''],
                 'performance' => ['use' => '1'],
-                'custom' => ['cta_click', 'form_open'],
+                'offer_revealed' => ['use' => 'true'],
+                'checkout_click' => ['use' => '0'],
+                'custom' => ['cta_click', 'offer_revealed'],
             ],
         ];
 
@@ -23,8 +25,27 @@ final class CampaignEventValidationTest extends TestCase
             'scroll' => ['use' => true, 'thresholds' => [50, 90]],
             'time' => ['use' => false, 'thresholds' => []],
             'performance' => ['use' => true],
-            'custom' => ['cta_click', 'form_open'],
+            'offer_revealed' => ['use' => true],
+            'checkout_click' => ['use' => false],
+            'custom' => ['cta_click', 'offer_revealed'],
         ], $input['events']);
+    }
+
+    public function testMissingStandardTrackingHelpersDefaultToDisabledWithoutChangingCustomEvents(): void
+    {
+        $input = [
+            'events' => [
+                'custom' => ['offer_revealed', 'checkout_click', 'cta_click'],
+            ],
+        ];
+
+        self::assertNull(normalize_event_input($input));
+        self::assertSame(['use' => false], $input['events']['offer_revealed']);
+        self::assertSame(['use' => false], $input['events']['checkout_click']);
+        self::assertSame(
+            ['offer_revealed', 'checkout_click', 'cta_click'],
+            $input['events']['custom']
+        );
     }
 
     public function testDisabledCollectorsDiscardHiddenGarbageWithoutBlockingSave(): void
@@ -108,6 +129,8 @@ final class CampaignEventValidationTest extends TestCase
             'scroll' => ['use' => false, 'thresholds' => [50]],
             'time' => ['use' => false, 'thresholds' => [60]],
             'performance' => ['use' => false],
+            'offer_revealed' => ['use' => false],
+            'checkout_click' => ['use' => false],
             'custom' => [],
         ];
 
@@ -126,6 +149,12 @@ final class CampaignEventValidationTest extends TestCase
         $duplicateCustom = $base;
         $duplicateCustom['custom'] = ['cta_click', 'cta_click'];
 
+        $invalidStandardSection = $base;
+        $invalidStandardSection['offer_revealed'] = true;
+
+        $invalidStandardSwitch = $base;
+        $invalidStandardSwitch['checkout_click'] = ['use' => 'yes'];
+
         return [
             'enabled collector needs a threshold' => [
                 $enabledWithoutThreshold,
@@ -142,6 +171,14 @@ final class CampaignEventValidationTest extends TestCase
             'duplicate custom name' => [
                 $duplicateCustom,
                 'Duplicate custom event name: cta_click.',
+            ],
+            'standard helper settings are objects' => [
+                $invalidStandardSection,
+                'Offer-revealed event settings must be an object.',
+            ],
+            'standard helper switch is boolean' => [
+                $invalidStandardSwitch,
+                'Checkout-click event switch is invalid.',
             ],
         ];
     }

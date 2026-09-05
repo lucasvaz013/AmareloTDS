@@ -32,8 +32,11 @@ test('ordinary S2S event catalog contains enabled event names but no performance
       timeEnabled: true,
       timeThresholds: '60,120',
       performanceEnabled: true,
+      offerRevealedEnabled: true,
+      checkoutClickEnabled: true,
       customEvents: [
         'cta_click',
+        'offer_revealed',
         'performance',
         'performance_lcp',
         'scroll_75',
@@ -42,7 +45,15 @@ test('ordinary S2S event catalog contains enabled event names but no performance
         'cta_click',
       ],
     }),
-    ['scroll_50', 'scroll_90', 'stay_60s', 'stay_120s', 'cta_click']
+    [
+      'scroll_50',
+      'scroll_90',
+      'stay_60s',
+      'stay_120s',
+      'offer_revealed',
+      'checkout_click',
+      'cta_click',
+    ]
   );
 });
 
@@ -53,6 +64,8 @@ test('disabled collectors do not contribute threshold events', () => {
       scrollThresholds: '50',
       timeEnabled: false,
       timeThresholds: '60',
+      offerRevealedEnabled: false,
+      checkoutClickEnabled: false,
       customEvents: [],
     }),
     []

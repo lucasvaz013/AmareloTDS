@@ -86,7 +86,7 @@ Backfix, redirect-правила и ленивая загрузка изобра
 
 ## Events
 
-Здесь настраиваются включаемые пороги глубины прокрутки и видимого времени, а также список разрешённых пользовательских событий. Только эти включённые `scroll_*`, `stay_*` и custom events доступны для выбора во втором searchable chip-поле **Events** каждого S2S-правила. Performance/RUM-метрики не считаются S2S events. Семантика сбора описана в разделе [Events](events.md).
+Здесь настраиваются пороги глубины прокрутки и видимого времени, стандартные helpers `offer_revealed` и `checkout_click`, а также список разрешённых пользовательских событий. Включённые стандартные helpers, `scroll_*`, `stay_*` и custom events доступны для выбора во втором searchable chip-поле **Events** каждого S2S-правила. Performance/RUM-метрики не считаются S2S events. Семантика сбора и контракты маркеров лендинга описаны в разделе [Events](events.md).
 
 ## Conversions
 
@@ -96,7 +96,7 @@ Backfix, redirect-правила и ленивая загрузка изобра
 
 Здесь находятся Key protection и исходящие S2S postbacks. Переключатель **Key protection** требует параметр `pbkey` во входящем postback; в поле **Allowed key values** перечисляются допустимые значения через запятую. При включённой защите отклонённые postbacks скрываются за `404 Not Found` вне Debug Mode.
 
-Каждое S2S-правило имеет два searchable chip-поля: **Conversion statuses** из каталога Conversions и **Events** из включённых scroll/time/custom browser events. Выборы работают по OR: достаточно любого выбранного статуса или события. Подробнее о макросах, однократной отправке browser event и fire-and-forget доставке только для event-triggered S2S: [Конверсии и Postbacks](postbacks.md).
+Каждое S2S-правило имеет два searchable chip-поля: **Conversion statuses** из каталога Conversions и **Events** из включённых standard, scroll/time и custom browser events. Выборы работают по OR: достаточно любого выбранного статуса или события. Подробнее о макросах, однократной отправке browser event и fire-and-forget доставке только для event-triggered S2S: [Конверсии и Postbacks](postbacks.md).
 
 ## Misc
 

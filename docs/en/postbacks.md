@@ -65,11 +65,11 @@ ytdsConversion('Reg').then(console.log).catch(console.error);
 Each S2S rule in **Postbacks** has a URL, a `GET` or `POST` method, and two independent searchable fields: **Conversion statuses** and **Events**. Selected values appear as chips and can be found by typing, added, or removed without changing the rest of the rule.
 
 - **Conversion statuses** contains internal statuses from the Conversions catalog. For a conversion, `{status}` in the URL is replaced with that normalized internal status.
-- **Events** contains only enabled browser events: configured `scroll_*` and `stay_*` thresholds plus allowed custom events. Performance/RUM metrics are not S2S events and do not appear in this field.
+- **Events** contains only enabled browser events: standard `offer_revealed` and `checkout_click` helpers, configured `scroll_*` and `stay_*` thresholds, and allowed custom events. Performance/RUM metrics are not S2S events and do not appear in this field.
 
 The selections use **OR** semantics: a rule runs when any selected conversion status **or** any selected event occurs. A rule with both fields empty does not run. Each accepted history row, including an accepted paid repeat, can trigger a selected conversion status.
 
-A browser-event delivery can happen only once for a `clickid + step + event` combination. Repeated scroll crossings, visible-time threshold hits, or custom-event calls do not create another S2S delivery for that same combination.
+A browser-event delivery can happen only once for a `clickid + step + event` combination. Repeated standard collector triggers, scroll crossings, visible-time threshold hits, or custom-event calls do not create another S2S delivery for that same combination.
 
 ### Macros
 

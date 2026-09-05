@@ -289,4 +289,17 @@ final class CampaignSettingsSectionHeadersTest extends TestCase
         $this->assertStringContainsString('aria-activedescendant', $script);
         $this->assertStringContainsString('ordinaryEventCatalogFromState', $script);
     }
+
+    public function testEventsExposeStandardTrackingHelpersWithoutRemovingCustomEvents(): void
+    {
+        $form = file_get_contents(__DIR__ . '/../../code/admin/campsettings.php');
+
+        $this->assertStringContainsString('<span class="flow-group-title">Offer revealed</span>', $form);
+        $this->assertStringContainsString('name="events.offer_revealed.use"', $form);
+        $this->assertStringContainsString('<span class="flow-group-title">Checkout click</span>', $form);
+        $this->assertStringContainsString('name="events.checkout_click.use"', $form);
+        $this->assertStringContainsString('event-landing-compatibility', $form);
+        $this->assertStringContainsString('<span class="flow-group-title">Custom events</span>', $form);
+        $this->assertStringContainsString('id="add-custom-event"', $form);
+    }
 }

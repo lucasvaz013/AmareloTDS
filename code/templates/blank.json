@@ -102,6 +102,12 @@
         "performance": {
             "use": false
         },
+        "offer_revealed": {
+            "use": false
+        },
+        "checkout_click": {
+            "use": false
+        },
         "custom": []
     },
     "statistics": {

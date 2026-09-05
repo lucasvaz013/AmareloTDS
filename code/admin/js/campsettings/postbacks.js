@@ -53,6 +53,12 @@ function ordinaryEventCatalogFromState(state) {
             names.push(`stay_${threshold}s`);
         }
     }
+    if (state?.offerRevealedEnabled) {
+        names.push('offer_revealed');
+    }
+    if (state?.checkoutClickEnabled) {
+        names.push('checkout_click');
+    }
     for (const rawName of Array.isArray(state?.customEvents) ? state.customEvents : []) {
         const name = String(rawName || '').trim();
         if (
@@ -83,6 +89,8 @@ function campaignEventCatalog() {
         scrollThresholds: document.getElementById('events-scroll-thresholds')?.value || '',
         timeEnabled: document.getElementById('events-time-tracking-toggle')?.checked === true,
         timeThresholds: document.getElementById('events-time-thresholds')?.value || '',
+        offerRevealedEnabled: document.getElementById('events-offer-revealed-toggle')?.checked === true,
+        checkoutClickEnabled: document.getElementById('events-checkout-click-toggle')?.checked === true,
         customEvents: Array.from(document.querySelectorAll('#custom-event-list .custom-event-name'))
             .map((input) => input.value),
     });
@@ -502,7 +510,8 @@ function initializePostbackSettings() {
     });
     document.addEventListener('change', (event) => {
         if (event.target.matches(
-            '#events-scroll-tracking-toggle, #events-time-tracking-toggle'
+            '#events-scroll-tracking-toggle, #events-time-tracking-toggle, '
+            + '#events-offer-revealed-toggle, #events-checkout-click-toggle'
         )) {
             refreshCatalogs();
         }
